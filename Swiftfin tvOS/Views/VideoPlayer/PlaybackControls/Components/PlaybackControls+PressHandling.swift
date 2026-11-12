@@ -11,12 +11,38 @@ import SwiftUI
 extension VideoPlayer.PlaybackControls {
 
     func handlePressEvent(_ press: VideoPlayer.UIContainerViewController.PressEvent) {
+        if let isTrackpadTouchActive = press.trackpadTouchIsActive {
+            if isTrackpadTouchActive {
+                startSpeedBoost(using: .oneThreeQuarter)
+            } else {
+                stopSpeedBoost()
+            }
+
+            press.resolve(.handled)
+            return
+        }
+
         if let direction = press.trackpadClickDirection {
             switch direction {
             case .left:
                 jumpBackward(by: .seconds(5))
             case .right:
                 jumpForward(by: .seconds(5))
+            case .center:
+                if viewState.presentation == .hidden {
+                    viewState.showControls()
+                } else if viewState.isScrubbing {
+                    viewState.commitScrub(resumePlayback: true)
+                } else if viewState.isProgressBarFocused, mediaSession.canControlPlayback {
+                    switch mediaSession.playbackRequestStatus {
+                    case .playing:
+                        mediaSession.setPlaybackRequestStatus(status: .paused)
+                    case .paused:
+                        mediaSession.setPlaybackRequestStatus(status: .playing)
+                    }
+
+                    viewState.refreshAutoDismiss()
+                }
             }
 
             press.resolve(.handled)

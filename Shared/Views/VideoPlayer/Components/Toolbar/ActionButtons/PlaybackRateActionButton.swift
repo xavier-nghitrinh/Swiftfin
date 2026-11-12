@@ -21,6 +21,14 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
         @Environment(MediaSession.self)
         private var mediaSession
 
+        private var availableRates: [Double] {
+            #if os(tvOS)
+            Set(rates + [PlaybackSpeed.oneThreeQuarter.rawValue]).sorted()
+            #else
+            rates
+            #endif
+        }
+
         @ContentBuilder
         var body: some View {
             @Bindable
@@ -33,12 +41,12 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
                 systemImage: VideoPlayerActionButton.playbackSpeed.systemImage
             ) {
                 Picker(L10n.playbackSpeed, selection: selection) {
-                    ForEach(rates.filter { supportedRates.contains($0) }, id: \.self) { rate in
+                    ForEach(availableRates.filter { supportedRates.contains($0) }, id: \.self) { rate in
                         Text(rate, format: .playbackRate)
                             .tag(rate)
                     }
 
-                    if !rates.contains(mediaSession.effectiveRate) {
+                    if !availableRates.contains(mediaSession.effectiveRate) {
                         Divider()
 
                         Text(mediaSession.effectiveRate, format: .playbackRate)

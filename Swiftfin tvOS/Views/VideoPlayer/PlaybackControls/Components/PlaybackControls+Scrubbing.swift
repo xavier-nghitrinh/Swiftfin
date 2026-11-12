@@ -12,26 +12,34 @@ import SwiftUI
 
 extension VideoPlayer.PlaybackControls {
 
-    func startSpeedBoost() {
+    func startSpeedBoost(using speed: PlaybackSpeed? = nil) {
         guard mediaSession.canControlPlayback, !isSpeedBoosting, speedBoostTimer == nil else { return }
 
         viewState.setInteraction(.speedBoost, active: true)
 
+        if let speed {
+            applySpeedBoost(speed)
+            return
+        }
+
         speedBoostTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [self] _ in
             // This timer is scheduled on the main actor's run loop.
             MainActor.assumeIsolated {
-                isSpeedBoosting = true
-                viewState.originalPlaybackRate = mediaSession.rate
-
                 let multiplier = Defaults[.VideoPlayer.Gesture.longPressSpeedMultiplier]
-                mediaSession.rate = multiplier.rawValue
-
-                toaster.present(
-                    Text(multiplier.displayTitle),
-                    systemName: "forward.fill"
-                )
+                applySpeedBoost(multiplier)
             }
         }
+    }
+
+    private func applySpeedBoost(_ speed: PlaybackSpeed) {
+        isSpeedBoosting = true
+        viewState.originalPlaybackRate = mediaSession.rate
+        mediaSession.rate = speed.rawValue
+
+        toaster.present(
+            Text(speed.displayTitle),
+            systemName: "forward.fill"
+        )
     }
 
     func stopSpeedBoost(performJump: Bool = false) {
