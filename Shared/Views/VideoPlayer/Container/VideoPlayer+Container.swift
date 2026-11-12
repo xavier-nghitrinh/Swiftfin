@@ -592,6 +592,7 @@ extension VideoPlayer {
         #if os(tvOS)
         let onPressEvent = OnPressEvent()
         private var lastTouchPokeTime: CFTimeInterval = 0
+        private var lastTrackpadTouch: (location: CGPoint, timestamp: CFTimeInterval)?
         private var pendingPlaybackFocusRequest: UUID?
         #endif
 
@@ -1196,11 +1197,15 @@ extension VideoPlayer {
             guard !(viewState.presentation == .hidden && viewState.isPresentingOverlayActions) else { return }
 
             let now = CACurrentMediaTime()
+            if let touch = touches.first {
+                lastTrackpadTouch = (touch.location(in: view), now)
+            }
+
             guard now - lastTouchPokeTime > 1.0 else { return }
 
             lastTouchPokeTime = now
 
-            if mediaSession.item.isLiveStream {
+            if viewState.presentation == .hidden || mediaSession.item.isLiveStream {
                 viewState.showControls()
             } else {
                 viewState.showProgress()
@@ -1312,9 +1317,39 @@ extension VideoPlayer {
         }
 
         private func handleSelectEnded(_ press: UIPress, event: UIPressesEvent?) {
+            let trackpadTouch = lastTrackpadTouch
+            lastTrackpadTouch = nil
+
             if viewState.isOverlayActionFocused {
                 forwardPressesEnded([press], event: event)
                 return
+            }
+
+            if let trackpadTouch,
+               CACurrentMediaTime() - trackpadTouch.timestamp < 1.0,
+               view.bounds.width > 0 {
+                let position = trackpadTouch.location.x / view.bounds.width
+                let direction: PressEvent.TrackpadClickDirection?
+
+                if position < 1.0 / 3.0 {
+                    direction = .left
+                } else if position > 2.0 / 3.0 {
+                    direction = .right
+                } else {
+                    direction = nil
+                }
+
+                if let direction {
+                    onPressEvent.send(
+                        .init(
+                            type: .select,
+                            phase: .ended,
+                            trackpadClickDirection: direction,
+                            defaultAction: {}
+                        )
+                    )
+                    return
+                }
             }
 
             if viewState.presentation == .hidden {
@@ -1368,6 +1403,12 @@ extension VideoPlayer.UIContainerViewController {
 
     struct PressEvent {
 
+        enum TrackpadClickDirection {
+
+            case left
+            case right
+        }
+
         enum Resolution {
 
             case handled
@@ -1376,8 +1417,21 @@ extension VideoPlayer.UIContainerViewController {
 
         let type: UIPress.PressType
         let phase: UIPress.Phase
+        let trackpadClickDirection: TrackpadClickDirection?
 
         fileprivate let defaultAction: () -> Void
+
+        fileprivate init(
+            type: UIPress.PressType,
+            phase: UIPress.Phase,
+            trackpadClickDirection: TrackpadClickDirection? = nil,
+            defaultAction: @escaping () -> Void
+        ) {
+            self.type = type
+            self.phase = phase
+            self.trackpadClickDirection = trackpadClickDirection
+            self.defaultAction = defaultAction
+        }
 
         func resolve(_ resolution: Resolution) {
             if resolution == .fallback {

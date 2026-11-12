@@ -11,6 +11,18 @@ import SwiftUI
 extension VideoPlayer.PlaybackControls {
 
     func handlePressEvent(_ press: VideoPlayer.UIContainerViewController.PressEvent) {
+        if let direction = press.trackpadClickDirection {
+            switch direction {
+            case .left:
+                jumpBackward(by: .seconds(5))
+            case .right:
+                jumpForward(by: .seconds(5))
+            }
+
+            press.resolve(.handled)
+            return
+        }
+
         let isSeekPress = press.type == .leftArrow || press.type == .rightArrow
 
         if isSeekPress, viewState.isOverlayActionFocused {
