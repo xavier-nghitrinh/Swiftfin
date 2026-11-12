@@ -22,27 +22,12 @@ extension VideoPlayer.PlaybackControls {
             return
         }
 
-        if let direction = press.trackpadClickDirection {
+        if let direction = press.trackpadSeekDirection {
             switch direction {
-            case .left:
+            case .backward:
                 jumpBackward(by: .seconds(5))
-            case .right:
+            case .forward:
                 jumpForward(by: .seconds(5))
-            case .center:
-                if viewState.presentation == .hidden {
-                    viewState.showControls()
-                } else if viewState.isScrubbing {
-                    viewState.commitScrub(resumePlayback: true)
-                } else if viewState.isProgressBarFocused, mediaSession.canControlPlayback {
-                    switch mediaSession.playbackRequestStatus {
-                    case .playing:
-                        mediaSession.setPlaybackRequestStatus(status: .paused)
-                    case .paused:
-                        mediaSession.setPlaybackRequestStatus(status: .playing)
-                    }
-
-                    viewState.refreshAutoDismiss()
-                }
             }
 
             press.resolve(.handled)

@@ -7,6 +7,9 @@
 //
 
 import Defaults
+#if os(tvOS)
+import GameController
+#endif
 import Logging
 import MediaPlayer
 import SwiftUI
@@ -592,7 +595,9 @@ extension VideoPlayer {
         #if os(tvOS)
         let onPressEvent = OnPressEvent()
         private var lastTouchPokeTime: CFTimeInterval = 0
-        private var trackpadClickHandledAt: CFTimeInterval?
+        private var remoteTrackpadPosition: CGPoint = .zero
+        private var remoteTrackpadPositionUpdatedAt: CFTimeInterval = 0
+        private var trackpadControllerConnectionObserver: NSObjectProtocol?
         private var pendingPlaybackFocusRequest: UUID?
         #endif
 
@@ -618,6 +623,14 @@ extension VideoPlayer {
         @available(*, unavailable)
         required init?(coder: NSCoder) {
             fatalError("init(coder:) has not been implemented")
+        }
+
+        deinit {
+            #if os(tvOS)
+            if let trackpadControllerConnectionObserver {
+                NotificationCenter.default.removeObserver(trackpadControllerConnectionObserver)
+            }
+            #endif
         }
 
         private var verticalPanGestureStartConstant: CGFloat?
@@ -839,8 +852,17 @@ extension VideoPlayer {
             let gesture = UITapGestureRecognizer(target: self, action: #selector(handleMenuEnded))
             gesture.allowedPressTypes = [NSNumber(value: UIPress.PressType.menu.rawValue)]
             view.addGestureRecognizer(gesture)
-            view.addGestureRecognizer(trackpadClickGesture)
+            view.addGestureRecognizer(trackpadSwipeBackwardGesture)
+            view.addGestureRecognizer(trackpadSwipeForwardGesture)
             view.addGestureRecognizer(trackpadTouchGesture)
+            configureTrackpadControllers()
+            trackpadControllerConnectionObserver = NotificationCenter.default.addObserver(
+                forName: .GCControllerDidConnect,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.configureTrackpadControllers()
+            }
             #endif
         }
 
@@ -1116,16 +1138,24 @@ extension VideoPlayer {
             return gesture
         }()
 
-        private lazy var trackpadClickGesture: UITapGestureRecognizer = {
-            let gesture = UITapGestureRecognizer(target: self, action: #selector(handleTrackpadClick(_:)))
-            gesture.allowedPressTypes = [NSNumber(value: UIPress.PressType.select.rawValue)]
+        private func trackpadSwipeGesture(
+            direction: UISwipeGestureRecognizer.Direction
+        ) -> UISwipeGestureRecognizer {
+            let gesture = UISwipeGestureRecognizer(target: self, action: #selector(handleTrackpadSwipe(_:)))
+            gesture.direction = direction
+            gesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
+            gesture.allowedPressTypes = []
             gesture.cancelsTouchesInView = false
             gesture.delegate = self
             return gesture
-        }()
+        }
+
+        private lazy var trackpadSwipeBackwardGesture = trackpadSwipeGesture(direction: .left)
+        private lazy var trackpadSwipeForwardGesture = trackpadSwipeGesture(direction: .right)
 
         private lazy var trackpadTouchGesture: UILongPressGestureRecognizer = {
             let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleTrackpadTouch(_:)))
+            gesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
             gesture.allowedPressTypes = []
             gesture.minimumPressDuration = 0
             gesture.allowableMovement = .greatestFiniteMagnitude
@@ -1229,29 +1259,23 @@ extension VideoPlayer {
         }
 
         @objc
-        private func handleTrackpadClick(_ gesture: UITapGestureRecognizer) {
+        private func handleTrackpadSwipe(_ gesture: UISwipeGestureRecognizer) {
             guard gesture.state == .ended,
-                  !viewState.isOverlayActionFocused,
-                  view.bounds.width > 0
+                  mediaSession.canSeek,
+                  !viewState.isPresentingSupplement,
+                  !viewState.isPresentingOverlayActions,
+                  (
+                      viewState.presentation == .hidden ||
+                          viewState.presentation == .progress ||
+                          viewState.isProgressBarFocused
+                  )
             else { return }
 
-            let position = gesture.location(in: view).x / view.bounds.width
-            let direction: PressEvent.TrackpadClickDirection
-
-            if position < 1.0 / 3.0 {
-                direction = .left
-            } else if position > 2.0 / 3.0 {
-                direction = .right
-            } else {
-                direction = .center
-            }
-
-            trackpadClickHandledAt = CACurrentMediaTime()
             onPressEvent.send(
                 .init(
                     type: .select,
                     phase: .ended,
-                    trackpadClickDirection: direction,
+                    trackpadSeekDirection: gesture === trackpadSwipeBackwardGesture ? .backward : .forward,
                     defaultAction: {}
                 )
             )
@@ -1270,6 +1294,21 @@ extension VideoPlayer {
                 )
             default:
                 break
+            }
+        }
+
+        private func configureTrackpadControllers() {
+            for controller in GCController.controllers() {
+                guard let microGamepad = controller.microGamepad else { continue }
+
+                microGamepad.reportsAbsoluteDpadValues = true
+                microGamepad.allowsRotation = false
+                microGamepad.dpad.valueChangedHandler = { [weak self] _, x, y in
+                    guard let self else { return }
+
+                    remoteTrackpadPosition = CGPoint(x: CGFloat(x), y: CGFloat(y))
+                    remoteTrackpadPositionUpdatedAt = CACurrentMediaTime()
+                }
             }
         }
 
@@ -1378,15 +1417,39 @@ extension VideoPlayer {
         }
 
         private func handleSelectEnded(_ press: UIPress, event: UIPressesEvent?) {
-            if let trackpadClickHandledAt,
-               CACurrentMediaTime() - trackpadClickHandledAt < 0.25 {
-                self.trackpadClickHandledAt = nil
+            if viewState.isOverlayActionFocused {
+                remoteTrackpadPositionUpdatedAt = 0
+                forwardPressesEnded([press], event: event)
                 return
             }
 
-            if viewState.isOverlayActionFocused {
-                forwardPressesEnded([press], event: event)
-                return
+            if CACurrentMediaTime() - remoteTrackpadPositionUpdatedAt < 0.4 {
+                let seekDirection: PressEvent.TrackpadSeekDirection?
+
+                if remoteTrackpadPosition.x < -0.6 {
+                    seekDirection = .backward
+                } else if remoteTrackpadPosition.x > 0.6 {
+                    seekDirection = .forward
+                } else {
+                    seekDirection = nil
+                }
+
+                remoteTrackpadPositionUpdatedAt = 0
+
+                if let seekDirection,
+                   mediaSession.canSeek,
+                   !viewState.isPresentingSupplement,
+                   !viewState.isPresentingOverlayActions {
+                    onPressEvent.send(
+                        .init(
+                            type: .select,
+                            phase: .ended,
+                            trackpadSeekDirection: seekDirection,
+                            defaultAction: {}
+                        )
+                    )
+                    return
+                }
             }
 
             if viewState.presentation == .hidden {
@@ -1440,11 +1503,10 @@ extension VideoPlayer.UIContainerViewController {
 
     struct PressEvent {
 
-        enum TrackpadClickDirection {
+        enum TrackpadSeekDirection {
 
-            case left
-            case center
-            case right
+            case backward
+            case forward
         }
 
         enum Resolution {
@@ -1455,7 +1517,7 @@ extension VideoPlayer.UIContainerViewController {
 
         let type: UIPress.PressType
         let phase: UIPress.Phase
-        let trackpadClickDirection: TrackpadClickDirection?
+        let trackpadSeekDirection: TrackpadSeekDirection?
         let trackpadTouchIsActive: Bool?
 
         fileprivate let defaultAction: () -> Void
@@ -1463,13 +1525,13 @@ extension VideoPlayer.UIContainerViewController {
         fileprivate init(
             type: UIPress.PressType,
             phase: UIPress.Phase,
-            trackpadClickDirection: TrackpadClickDirection? = nil,
+            trackpadSeekDirection: TrackpadSeekDirection? = nil,
             trackpadTouchIsActive: Bool? = nil,
             defaultAction: @escaping () -> Void
         ) {
             self.type = type
             self.phase = phase
-            self.trackpadClickDirection = trackpadClickDirection
+            self.trackpadSeekDirection = trackpadSeekDirection
             self.trackpadTouchIsActive = trackpadTouchIsActive
             self.defaultAction = defaultAction
         }
@@ -1487,21 +1549,6 @@ extension VideoPlayer.UIContainerViewController {
 extension VideoPlayer.UIContainerViewController: UIGestureRecognizerDelegate {
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive press: UIPress) -> Bool {
-        if gestureRecognizer === trackpadTouchGesture {
-            return true
-        }
-
-        if gestureRecognizer === trackpadClickGesture {
-            let isHiddenWithNoOverlayActions = viewState.presentation == .hidden &&
-                !viewState.isPresentingOverlayActions
-            let isFocusedProgress = viewState.presentation == .progress && viewState.isProgressBarFocused
-
-            return (isHiddenWithNoOverlayActions || isFocusedProgress) &&
-                mediaSession.canSeek &&
-                !viewState.isPresentingOverlayActions &&
-                !viewState.isPresentingSupplement
-        }
-
         let focusedView = UIFocusSystem.focusSystem(for: view)?.focusedItem as? UIView
         return focusedView?.isDescendant(of: view) != true
     }
