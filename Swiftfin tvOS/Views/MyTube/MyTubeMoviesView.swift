@@ -119,17 +119,17 @@ private struct MovieShelfView: View {
                 .padding(.horizontal, 50)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 30) {
+                LazyHStack(spacing: MyTubeTileMetrics.horizontalSpacing) {
                     ForEach(movies) { movie in
-                        Button {
+                        MyTubeTileButton(action: {
                             router.route(to: .myTubeMovieDetail(movie: movie, relatedMovies: movies))
-                        } label: {
+                        }) {
                             VStack(alignment: .leading, spacing: 8) {
                                 MyTubeArtworkView(
                                     imagePath: movie.backdropUrl ?? movie.posterUrl,
                                     placeholderSystemName: "film"
                                 )
-                                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                                .aspectRatio(MyTubeTileMetrics.aspectRatio, contentMode: .fit)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
                                 Text(movie.title)
@@ -138,6 +138,7 @@ private struct MovieShelfView: View {
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
                                     .foregroundStyle(.primary)
+                                    .frame(height: MyTubeTileMetrics.titleHeight, alignment: .topLeading)
 
                                 HStack(spacing: 8) {
                                     if let releaseYear = movie.releaseYear {
@@ -149,11 +150,10 @@ private struct MovieShelfView: View {
                                 }
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .frame(height: MyTubeTileMetrics.metadataHeight, alignment: .topLeading)
                             }
-                            .frame(width: 420, alignment: .leading)
-                            .contentShape(Rectangle())
+                            .frame(width: MyTubeTileMetrics.width, alignment: .leading)
                         }
-                        .buttonStyle(.card)
                     }
                 }
                 .padding(.horizontal, 50)
@@ -165,6 +165,9 @@ private struct MovieShelfView: View {
 
 struct MyTubeMovieDetailView: View {
 
+    @Router
+    private var router
+
     @Injected(\.currentUserSession)
     private var userSession
 
@@ -175,16 +178,53 @@ struct MyTubeMovieDetailView: View {
     let relatedMovies: [MyTubeMovie]
 
     @State
+    private var movieDetail: MyTubeMovie?
+
+    @State
     private var isLoading = false
 
+    @State
+    private var isUpdatingStatus = false
+
+    @State
+    private var isMovingToTrash = false
+
+    @State
+    private var actionError: String?
+
+    @State
+    private var detailError: String?
+
+    private var displayMovie: MyTubeMovie {
+        movieDetail ?? movie
+    }
+
+    private var recommendations: [MyTubeMovie] {
+        let detailedRecommendations = movieDetail?.recommendations ?? []
+        let source = detailedRecommendations.isEmpty ? relatedMovies : detailedRecommendations
+        return source.filter { $0.movieId != movie.movieId }
+    }
+
+    private func loadMovieDetail() async {
+        do {
+            movieDetail = try await MyTubeClient.shared.getMovieDetail(movieId: movie.movieId)
+        } catch {
+            detailError = error.localizedDescription
+        }
+    }
+
     private func play() {
-        guard !isLoading, let userSession else { return }
+        guard !isLoading else { return }
+        guard let userSession else {
+            actionError = MyTubeError.noActiveServer.localizedDescription
+            return
+        }
         isLoading = true
 
         Task { @MainActor in
             defer { isLoading = false }
             do {
-                let video = movie.asVideoItem
+                let video = displayMovie.asVideoItem
                 let entry = try await userSession.getFullItem(id: video.jellyfinItemId)
                 var configuration = MediaPlaybackConfiguration()
                 if video.playbackPosition > 0, !video.watched {
@@ -197,7 +237,48 @@ struct MyTubeMovieDetailView: View {
                 MyTubePlaybackTracker.shared.startTracking(videoId: video.videoId, duration: duration)
                 playMedia(intent: PlaybackIntent(item: snapshot, configuration: configuration))
             } catch {
-                print("MyTubeMovieDetailView: Failed to load movie \(movie.jellyfinItemId): \(error)")
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func toggleWatched() {
+        guard !isUpdatingStatus, !isMovingToTrash else { return }
+        let markWatched = !displayMovie.watched
+        let movieId = displayMovie.movieId
+        isUpdatingStatus = true
+
+        Task { @MainActor in
+            defer { isUpdatingStatus = false }
+            do {
+                if markWatched {
+                    try await MyTubeClient.shared.markWatched(videoId: movieId)
+                } else {
+                    try await MyTubeClient.shared.markUnwatched(videoId: movieId)
+                }
+
+                var updatedMovie = displayMovie
+                updatedMovie.watched = markWatched
+                updatedMovie.playbackPosition = markWatched ? updatedMovie.duration : 0
+                movieDetail = updatedMovie
+                NotificationCenter.default.post(name: .myTubeFeedNeedsRefresh, object: nil)
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func moveToTrash() {
+        guard !isMovingToTrash, !isUpdatingStatus else { return }
+        isMovingToTrash = true
+        Task { @MainActor in
+            defer { isMovingToTrash = false }
+            do {
+                try await MyTubeClient.shared.moveToTrash(videoId: displayMovie.movieId)
+                NotificationCenter.default.post(name: .myTubeFeedNeedsRefresh, object: nil)
+                router.dismiss()
+            } catch {
+                actionError = error.localizedDescription
             }
         }
     }
@@ -205,75 +286,72 @@ struct MyTubeMovieDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 36) {
-                ZStack(alignment: .leading) {
-                    MyTubeArtworkView(
-                        imagePath: movie.backdropUrl ?? movie.posterUrl,
-                        placeholderSystemName: "film"
-                    )
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 380)
-                    .overlay {
-                        LinearGradient(
-                            colors: [.black.opacity(0.15), .black.opacity(0.95)],
-                            startPoint: .top,
-                            endPoint: .bottom
+                MyTubeDetailHeader(
+                    title: displayMovie.title,
+                    placeholderSystemName: "film",
+                    posterPath: displayMovie.posterUrl,
+                    backdropPath: displayMovie.backdropUrl ?? displayMovie.posterUrl,
+                    rating: displayMovie.communityRating,
+                    metadata: [
+                        displayMovie.releaseYear.map(String.init),
+                        displayMovie.asVideoItem.formattedDuration
+                    ].compactMap { $0 }.filter { !$0.isEmpty },
+                    genres: Array(displayMovie.genres.prefix(3)),
+                    overview: displayMovie.overview
+                ) {
+                    Button(action: play) {
+                        Label(
+                            isLoading
+                                ? "Loading..."
+                                : (displayMovie.playbackPosition > 15 && !displayMovie.watched ? "Resume" : "Play"),
+                            systemImage: "play.fill"
                         )
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .disabled(isLoading)
 
-                    HStack(alignment: .bottom, spacing: 30) {
-                        MyTubeArtworkView(
-                            imagePath: movie.posterUrl ?? movie.backdropUrl,
-                            placeholderSystemName: "film"
+                    Button(action: toggleWatched) {
+                        Label(
+                            displayMovie.watched ? "Mark Unwatched" : "Mark Watched",
+                            systemImage: displayMovie.watched ? "eye.slash" : "checkmark"
                         )
-                        .frame(width: 180, height: 270)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(movie.title)
-                                .font(.largeTitle)
-                                .fontWeight(.bold)
-
-                            HStack(spacing: 12) {
-                                if let releaseYear = movie.releaseYear {
-                                    Text(String(releaseYear))
-                                }
-                                if !movie.asVideoItem.formattedDuration.isEmpty {
-                                    Text(movie.asVideoItem.formattedDuration)
-                                }
-                            }
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-
-                            if let overview = movie.overview, !overview.isEmpty {
-                                Text(overview)
-                                    .font(.callout)
-                                    .lineLimit(5)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Button(action: play) {
-                                Label(isLoading ? "Loading..." : "Play", systemImage: "play.fill")
-                                    .font(.headline)
-                                    .padding(.horizontal, 22)
-                                    .padding(.vertical, 12)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.red)
-                            .disabled(isLoading)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.horizontal, 50)
-                    .padding(.bottom, 28)
+                    .buttonStyle(.bordered)
+                    .disabled(isUpdatingStatus || isMovingToTrash)
+
+                    Button(role: .destructive, action: moveToTrash) {
+                        Label("Trash", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isUpdatingStatus || isMovingToTrash)
                 }
-                .frame(height: 380)
 
-                let related = relatedMovies.filter { $0.movieId != movie.movieId }
-                if !related.isEmpty {
-                    MovieShelfView(title: "More Like This", movies: related)
+                if let detailError {
+                    Text("Additional movie details could not be loaded: \(detailError)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 50)
+                }
+
+                if !recommendations.isEmpty {
+                    MovieShelfView(title: "More Like This", movies: recommendations)
                 }
             }
             .padding(.bottom, 60)
+        }
+        .task {
+            await loadMovieDetail()
+        }
+        .alert("MyTube", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                actionError = nil
+            }
+        } message: {
+            Text(actionError ?? "")
         }
     }
 }

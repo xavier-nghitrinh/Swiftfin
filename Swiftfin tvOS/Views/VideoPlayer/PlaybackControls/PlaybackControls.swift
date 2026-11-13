@@ -54,6 +54,9 @@ extension VideoPlayer {
                     .enabled(viewState.isPresentingProgress)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            #if os(tvOS)
+            .ignoresSafeArea(.container, edges: .bottom)
+            #endif
             .edgePadding(.horizontal)
             .focusSection()
             .coordinatedFocus(ViewState.Focus.controls)

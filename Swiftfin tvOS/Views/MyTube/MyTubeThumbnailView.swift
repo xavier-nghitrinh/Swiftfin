@@ -17,7 +17,7 @@ struct MyTubeThumbnailView: View {
     private var userSession
 
     let video: MyTubeVideo
-    var aspectRatio: CGFloat = 16.0 / 9.0
+    var aspectRatio: CGFloat = MyTubeTileMetrics.aspectRatio
 
     @State
     private var base64Image: UIImage?
@@ -86,51 +86,50 @@ struct MyTubeThumbnailView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            imageContent
-                .aspectRatio(aspectRatio, contentMode: .fit)
-                .clipped()
-                .background(Color.black.opacity(0.4))
-                .cornerRadius(12)
+        GeometryReader { geometry in
+            ZStack(alignment: .bottom) {
+                imageContent
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                    .background(Color.black.opacity(0.4))
 
-            if !video.formattedDuration.isEmpty {
-                HStack {
-                    Spacer()
-                    Text(video.formattedDuration)
-                        .font(.caption2)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.black.opacity(0.75))
-                        .cornerRadius(6)
-                        .padding(8)
-                }
-            }
-
-            if video.watched {
-                VStack {
+                if !video.formattedDuration.isEmpty {
                     HStack {
                         Spacer()
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                            Text("WATCHED")
-                                .font(.system(size: 9, weight: .bold))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.red.opacity(0.9))
-                        .cornerRadius(4)
-                        .padding(8)
+                        Text(video.formattedDuration)
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.75))
+                            .cornerRadius(6)
+                            .padding(8)
                     }
-                    Spacer()
                 }
-            }
 
-            if video.isPartiallyWatched {
-                GeometryReader { geo in
+                if video.watched {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text("WATCHED")
+                                    .font(.system(size: 9, weight: .bold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.red.opacity(0.9))
+                            .cornerRadius(4)
+                            .padding(8)
+                        }
+                        Spacer()
+                    }
+                }
+
+                if video.isPartiallyWatched {
                     VStack {
                         Spacer()
                         ZStack(alignment: .leading) {
@@ -140,14 +139,14 @@ struct MyTubeThumbnailView: View {
 
                             Rectangle()
                                 .fill(Color.red)
-                                .frame(width: geo.size.width * video.progressFraction, height: 5)
+                                .frame(width: geometry.size.width * video.progressFraction, height: 5)
                         }
                     }
                 }
-                .frame(height: 5)
-                .cornerRadius(2.5)
             }
         }
+        .aspectRatio(aspectRatio, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius))
         .onAppear(perform: decodeBase64IfPresent)
     }
 }
@@ -206,6 +205,7 @@ struct MyTubeArtworkView: View {
                             placeholder
                         }
                     }
+
                 } else {
                     placeholder
                 }
@@ -223,5 +223,110 @@ struct MyTubeArtworkView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+struct MyTubeDetailHeader<Actions: View>: View {
+
+    let title: String
+    let placeholderSystemName: String
+    let posterPath: String?
+    let backdropPath: String?
+    let rating: Double?
+    let metadata: [String]
+    let genres: [String]
+    let overview: String?
+    private let actions: Actions
+
+    init(
+        title: String,
+        placeholderSystemName: String,
+        posterPath: String?,
+        backdropPath: String?,
+        rating: Double?,
+        metadata: [String],
+        genres: [String],
+        overview: String?,
+        @ViewBuilder actions: () -> Actions
+    ) {
+        self.title = title
+        self.placeholderSystemName = placeholderSystemName
+        self.posterPath = posterPath
+        self.backdropPath = backdropPath
+        self.rating = rating
+        self.metadata = metadata
+        self.genres = genres
+        self.overview = overview
+        self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 32) {
+            MyTubeArtworkView(imagePath: posterPath, placeholderSystemName: placeholderSystemName)
+                .frame(width: 220, height: 330)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 18) {
+                Text(title)
+                    .font(.largeTitle.bold())
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    if let rating {
+                        Label {
+                            Text(rating, format: .number.precision(.fractionLength(1)))
+                        } icon: {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(.yellow)
+                        }
+                    }
+
+                    ForEach(Array(metadata.enumerated()), id: \.offset) { _, value in
+                        Text(value)
+                    }
+
+                    ForEach(genres, id: \.self) { genre in
+                        Text(genre)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.white.opacity(0.14), in: Capsule())
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(.white.opacity(0.92))
+
+                if let overview, !overview.isEmpty {
+                    Text(overview)
+                        .font(.callout)
+                        .lineSpacing(5)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 16) {
+                    actions
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 50)
+        .padding(.vertical, 40)
+        .frame(maxWidth: .infinity, minHeight: 540, alignment: .bottomLeading)
+        .background {
+            GeometryReader { geometry in
+                MyTubeArtworkView(imagePath: backdropPath, placeholderSystemName: placeholderSystemName)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .overlay(Color.black.opacity(0.42))
+                    .overlay {
+                        LinearGradient(
+                            colors: [.black.opacity(0.15), .black.opacity(0.78)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }

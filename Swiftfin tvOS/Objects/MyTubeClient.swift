@@ -111,6 +111,12 @@ final class MyTubeClient {
         return try await fetch(url)
     }
 
+    func getMovieDetail(movieId: String) async throws -> MyTubeMovie {
+        let base = try baseURL()
+        let url = base.appendingPathComponent("movies").appendingPathComponent(movieId)
+        return try await fetch(url)
+    }
+
     func getShowsHome() async throws -> MyTubeShowsHome {
         let base = try baseURL()
         let url = base.appendingPathComponent("shows").appendingPathComponent("home")

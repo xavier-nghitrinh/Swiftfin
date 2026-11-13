@@ -39,11 +39,7 @@ struct MyTubeFeedView: View {
     @State
     private var errorMessage: String?
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40)
-    ]
+    private let columns = MyTubeTileMetrics.gridColumns
 
     private func loadFeed(reset: Bool = false) async {
         guard !isLoading else { return }

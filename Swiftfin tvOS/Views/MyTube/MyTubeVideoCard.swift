@@ -12,6 +12,48 @@ import FactoryKit
 import JellyfinAPI
 import SwiftUI
 
+enum MyTubeTileMetrics {
+
+    static let width: CGFloat = 420
+    static let aspectRatio: CGFloat = 16.0 / 9.0
+    static let cornerRadius: CGFloat = 12
+    static let titleHeight: CGFloat = 48
+    static let metadataHeight: CGFloat = 18
+    static let horizontalSpacing: CGFloat = 30
+
+    static var gridColumns: [GridItem] {
+        Array(repeating: GridItem(.fixed(width), spacing: horizontalSpacing), count: 4)
+    }
+}
+
+struct MyTubeTileButton<Content: View>: View {
+
+    private let action: () -> Void
+    private let content: Content
+
+    @FocusState
+    private var isFocused: Bool
+
+    init(action: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+        self.action = action
+        self.content = content()
+    }
+
+    var body: some View {
+        Button(action: action) {
+            content
+                .contentShape(RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius))
+        }
+        .buttonStyle(.plain)
+        .focused($isFocused)
+        .overlay {
+            RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius)
+                .stroke(isFocused ? Color.white : .clear, lineWidth: 3)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
 struct MyTubeVideoCard: View {
 
     @Injected(\.currentUserSession)
@@ -100,19 +142,18 @@ struct MyTubeVideoCard: View {
     }
 
     var body: some View {
-        Button {
-            play()
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
+        MyTubeTileButton(action: play) {
+            VStack(alignment: .leading, spacing: 8) {
                 MyTubeThumbnailView(video: video)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(video.title)
                         .font(.callout)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                        .frame(height: MyTubeTileMetrics.titleHeight, alignment: .topLeading)
 
                     HStack(spacing: 6) {
                         if let channelName = video.channelName, !channelName.isEmpty {
@@ -134,13 +175,12 @@ struct MyTubeVideoCard: View {
                                 .lineLimit(1)
                         }
                     }
+                    .frame(height: MyTubeTileMetrics.metadataHeight, alignment: .topLeading)
                 }
-                .padding(.horizontal, 4)
-                .padding(.bottom, 6)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.card)
         .contextMenu {
             Button {
                 toggleWatched()

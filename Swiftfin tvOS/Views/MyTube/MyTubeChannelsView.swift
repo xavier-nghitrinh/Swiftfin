@@ -25,12 +25,7 @@ struct MyTubeChannelsView: View {
     @State
     private var errorMessage: String?
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40)
-    ]
+    private let columns = MyTubeTileMetrics.gridColumns
 
     private func loadChannels() async {
         guard !isLoading else { return }
@@ -83,9 +78,9 @@ struct MyTubeChannelsView: View {
 
                 LazyVGrid(columns: columns, spacing: 40) {
                     ForEach(channels) { channel in
-                        Button {
+                        MyTubeTileButton(action: {
                             router.route(to: .myTubeChannelDetail(channel: channel))
-                        } label: {
+                        }) {
                             VStack(spacing: 12) {
                                 ZStack(alignment: .topTrailing) {
                                     ChannelAvatarView(thumbnailUrl: channel.thumbnailUrl, name: channel.name)
@@ -117,7 +112,6 @@ struct MyTubeChannelsView: View {
                             .padding(.vertical, 16)
                             .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.card)
                     }
                 }
                 .padding(.horizontal, 50)
@@ -202,11 +196,7 @@ struct MyTubeChannelDetailView: View {
     @State
     private var isLoading = false
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40)
-    ]
+    private let columns = MyTubeTileMetrics.gridColumns
 
     private func loadVideos() async {
         guard !isLoading else { return }

@@ -21,11 +21,7 @@ struct MyTubeSearchView: View {
     @State
     private var isLoading = false
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40),
-        GridItem(.flexible(), spacing: 40)
-    ]
+    private let columns = MyTubeTileMetrics.gridColumns
 
     private func performSearch(query: String) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)

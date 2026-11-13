@@ -59,6 +59,10 @@ extension VideoPlayer.PlaybackControls {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 #endif
 
+                #if os(tvOS)
+                Spacer(minLength: 0)
+                #endif
+
                 ActionButtons()
                     .frame(height: viewLayout.toolbarButtonSize)
                     .padding(.horizontal)

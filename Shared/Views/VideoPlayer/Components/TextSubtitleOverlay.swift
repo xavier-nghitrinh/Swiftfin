@@ -51,7 +51,7 @@ private struct TextSubtitleOverlayContent: View {
 
     private var basePointSize: CGFloat {
         #if os(tvOS)
-        viewLayout.value(standard: 21, large: 36) * 1.5
+        viewLayout.value(standard: 21, large: 36) * 1.25
         #else
         viewLayout.value(standard: 21, large: 36)
         #endif

@@ -263,6 +263,9 @@ struct MyTubeMovie: Identifiable, Hashable, Codable, Sendable {
     let posterUrl: String?
     let backdropUrl: String?
     let jellyfinItemId: String
+    let communityRating: Double?
+    let genres: [String]
+    let recommendations: [MyTubeMovie]
     var watched: Bool
     var playbackPosition: Double
     let progressPercent: Double?
@@ -276,6 +279,9 @@ struct MyTubeMovie: Identifiable, Hashable, Codable, Sendable {
         case posterUrl = "poster_url"
         case backdropUrl = "backdrop_url"
         case jellyfinItemId = "jellyfin_item_id"
+        case communityRating = "community_rating"
+        case genres
+        case recommendations
         case watched
         case playbackPosition = "playback_position"
         case progressPercent = "progress_percent"
@@ -299,6 +305,15 @@ struct MyTubeMovie: Identifiable, Hashable, Codable, Sendable {
         posterUrl = try container.decodeIfPresent(String.self, forKey: .posterUrl)
         backdropUrl = try container.decodeIfPresent(String.self, forKey: .backdropUrl)
         jellyfinItemId = (try? container.decode(String.self, forKey: .jellyfinItemId)) ?? ""
+        if let rating = try? container.decode(Double.self, forKey: .communityRating) {
+            communityRating = rating
+        } else if let rating = try? container.decode(Int.self, forKey: .communityRating) {
+            communityRating = Double(rating)
+        } else {
+            communityRating = nil
+        }
+        genres = (try? container.decode([String].self, forKey: .genres)) ?? []
+        recommendations = (try? container.decode([MyTubeMovie].self, forKey: .recommendations)) ?? []
 
         if let b = try? container.decode(Bool.self, forKey: .watched) {
             watched = b
@@ -586,6 +601,9 @@ struct MyTubeShowDetail: Codable, Sendable {
     let overview: String?
     let posterUrl: String?
     let backdropUrl: String?
+    let startYear: Int?
+    let communityRating: Double?
+    let genres: [String]
     let seasons: [MyTubeSeason]
     let nextEpisode: MyTubeEpisode?
     let totalEpisodes: Int
@@ -596,6 +614,9 @@ struct MyTubeShowDetail: Codable, Sendable {
         case overview
         case posterUrl = "poster_url"
         case backdropUrl = "backdrop_url"
+        case startYear = "start_year"
+        case communityRating = "community_rating"
+        case genres
         case seasons
         case nextEpisode = "next_episode"
         case totalEpisodes = "total_episodes"
@@ -608,6 +629,15 @@ struct MyTubeShowDetail: Codable, Sendable {
         overview = try container.decodeIfPresent(String.self, forKey: .overview)
         posterUrl = try container.decodeIfPresent(String.self, forKey: .posterUrl)
         backdropUrl = try container.decodeIfPresent(String.self, forKey: .backdropUrl)
+        startYear = try container.decodeIfPresent(Int.self, forKey: .startYear)
+        if let rating = try? container.decode(Double.self, forKey: .communityRating) {
+            communityRating = rating
+        } else if let rating = try? container.decode(Int.self, forKey: .communityRating) {
+            communityRating = Double(rating)
+        } else {
+            communityRating = nil
+        }
+        genres = (try? container.decode([String].self, forKey: .genres)) ?? []
         seasons = (try? container.decode([MyTubeSeason].self, forKey: .seasons)) ?? []
         nextEpisode = try container.decodeIfPresent(MyTubeEpisode.self, forKey: .nextEpisode)
         totalEpisodes = (try? container.decode(Int.self, forKey: .totalEpisodes)) ?? 0
