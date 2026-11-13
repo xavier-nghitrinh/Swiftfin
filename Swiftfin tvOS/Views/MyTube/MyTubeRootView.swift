@@ -6,13 +6,15 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+// swiftlint:disable hard_coded_display_string
+
 import Defaults
 import FactoryKit
 import SwiftUI
 
 struct MyTubeRootView: View {
 
-    enum Tab: String, CaseIterable, Identifiable {
+    enum MyTubeTab: String, CaseIterable, Identifiable {
         case subscriptions
         case channels
         case movies
@@ -29,7 +31,7 @@ struct MyTubeRootView: View {
     private var tabBarPlacement
 
     @State
-    private var selectedTab: Tab = .subscriptions
+    private var selectedTab: MyTubeTab = .subscriptions
 
     @StateObject
     private var subscriptionsCoordinator = NavigationCoordinator()
@@ -56,7 +58,7 @@ struct MyTubeRootView: View {
     private var tabViewContent: some View {
         TabView(selection: $selectedTab) {
             // 1. Subscriptions (Home Feed)
-            Tab(value: Tab.subscriptions) {
+            SwiftUI.Tab(value: MyTubeTab.subscriptions) {
                 NavigationInjectionView(coordinator: subscriptionsCoordinator) {
                     MyTubeFeedView()
                 }
@@ -65,7 +67,7 @@ struct MyTubeRootView: View {
             }
 
             // 2. Channels
-            Tab(value: Tab.channels) {
+            SwiftUI.Tab(value: MyTubeTab.channels) {
                 NavigationInjectionView(coordinator: channelsCoordinator) {
                     MyTubeChannelsView()
                 }
@@ -74,7 +76,7 @@ struct MyTubeRootView: View {
             }
 
             // 3. Movies
-            Tab(value: Tab.movies) {
+            SwiftUI.Tab(value: MyTubeTab.movies) {
                 NavigationInjectionView(coordinator: moviesCoordinator) {
                     MyTubeMoviesView()
                 }
@@ -83,7 +85,7 @@ struct MyTubeRootView: View {
             }
 
             // 4. Shows
-            Tab(value: Tab.shows) {
+            SwiftUI.Tab(value: MyTubeTab.shows) {
                 NavigationInjectionView(coordinator: showsCoordinator) {
                     MyTubeShowsView()
                 }
@@ -92,7 +94,7 @@ struct MyTubeRootView: View {
             }
 
             // 5. Search
-            Tab(value: Tab.search, role: .search) {
+            SwiftUI.Tab(value: MyTubeTab.search, role: .search) {
                 NavigationInjectionView(coordinator: searchCoordinator) {
                     MyTubeSearchView()
                 }
@@ -101,7 +103,7 @@ struct MyTubeRootView: View {
             }
 
             // 6. Trash
-            Tab(value: Tab.trash) {
+            SwiftUI.Tab(value: MyTubeTab.trash) {
                 NavigationInjectionView(coordinator: trashCoordinator) {
                     MyTubeTrashView()
                 }
@@ -110,14 +112,14 @@ struct MyTubeRootView: View {
             }
 
             // 7. Swiftfin (Fallback to original Swiftfin home)
-            Tab(value: Tab.swiftfin) {
+            SwiftUI.Tab(value: MyTubeTab.swiftfin) {
                 MainTabView()
             } label: {
                 Label("Swiftfin", systemImage: "square.grid.2x2")
             }
 
             // 8. Settings
-            Tab(value: Tab.settings) {
+            SwiftUI.Tab(value: MyTubeTab.settings) {
                 NavigationInjectionView(coordinator: settingsCoordinator) {
                     SettingsView()
                 }

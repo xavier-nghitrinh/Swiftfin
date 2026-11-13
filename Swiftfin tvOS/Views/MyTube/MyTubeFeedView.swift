@@ -6,6 +6,8 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+// swiftlint:disable hard_coded_display_string
+
 import SwiftUI
 
 struct MyTubeFeedView: View {
