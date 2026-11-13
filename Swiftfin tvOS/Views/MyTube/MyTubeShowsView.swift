@@ -141,7 +141,7 @@ private struct ShowShelfView: View {
                     ForEach(shows) { show in
                         MyTubeTileButton(action: {
                             router.route(to: .myTubeShowDetail(show: show))
-                        }) {
+                        }) { isFocused in
                             VStack(alignment: .leading, spacing: 8) {
                                 MyTubeArtworkView(
                                     imagePath: show.backdropUrl ?? show.posterUrl,
@@ -149,9 +149,14 @@ private struct ShowShelfView: View {
                                 )
                                 .aspectRatio(MyTubeTileMetrics.aspectRatio, contentMode: .fit)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius)
+                                        .stroke(isFocused ? Color.white : .clear, lineWidth: 2)
+                                        .allowsHitTesting(false)
+                                }
 
                                 Text(show.title)
-                                    .font(.callout)
+                                    .font(.caption)
                                     .fontWeight(.semibold)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
@@ -373,11 +378,12 @@ private struct MyTubeSeasonTabs: View {
                                     Capsule()
                                         .stroke(
                                             focusedSeason == season.seasonNumber ? Color.white : .clear,
-                                            lineWidth: 3
+                                            lineWidth: 2
                                         )
                                 }
                         }
                         .buttonStyle(.plain)
+                        .focusEffectDisabled()
                         .focused($focusedSeason, equals: season.seasonNumber)
                         .id(season.seasonNumber)
                     }

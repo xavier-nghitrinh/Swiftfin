@@ -66,6 +66,9 @@ private struct MyTubeUserSessionRootView: View {
     @Default(.Customization.Poster.configuration)
     private var posterConfiguration
 
+    @State
+    private var pendingTopShelfURL: URL?
+
     var body: some View {
         ZStack {
             switch userSessionManager.state {
@@ -78,7 +81,7 @@ private struct MyTubeUserSessionRootView: View {
                 }
 
             case .signedIn:
-                MyTubeRootView()
+                MyTubeRootView(pendingTopShelfURL: $pendingTopShelfURL)
                     .environment(\.posterConfiguration, posterConfiguration)
                     .id(userSessionManager.currentSession.map(ObjectIdentifier.init))
             }
@@ -88,6 +91,11 @@ private struct MyTubeUserSessionRootView: View {
             await userSessionManager.start()
         }
         .onOpenURL { url in
+            if url.scheme == "mytube", url.host == "play" {
+                pendingTopShelfURL = url
+                return
+            }
+
             guard let authenticationAction else { return }
 
             Task {

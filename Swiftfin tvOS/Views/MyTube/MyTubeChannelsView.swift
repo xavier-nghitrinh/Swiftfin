@@ -80,12 +80,17 @@ struct MyTubeChannelsView: View {
                     ForEach(channels) { channel in
                         MyTubeTileButton(action: {
                             router.route(to: .myTubeChannelDetail(channel: channel))
-                        }) {
+                        }) { isFocused in
                             VStack(spacing: 12) {
                                 ZStack(alignment: .topTrailing) {
                                     ChannelAvatarView(thumbnailUrl: channel.thumbnailUrl, name: channel.name)
                                         .frame(width: 140, height: 140)
                                         .clipShape(Circle())
+                                        .overlay {
+                                            Circle()
+                                                .stroke(isFocused ? Color.white : .clear, lineWidth: 2)
+                                                .allowsHitTesting(false)
+                                        }
 
                                     if channel.unwatchedCount > 0 {
                                         Text("\(channel.unwatchedCount)")
@@ -101,7 +106,7 @@ struct MyTubeChannelsView: View {
                                 }
 
                                 Text(channel.name)
-                                    .font(.callout)
+                                    .font(.caption)
                                     .fontWeight(.semibold)
                                     .lineLimit(1)
 

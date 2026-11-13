@@ -263,6 +263,7 @@ struct MyTubeMovie: Identifiable, Hashable, Codable, Sendable {
     let posterUrl: String?
     let backdropUrl: String?
     let jellyfinItemId: String
+    let updatedAt: String?
     let communityRating: Double?
     let genres: [String]
     let recommendations: [MyTubeMovie]
@@ -279,6 +280,7 @@ struct MyTubeMovie: Identifiable, Hashable, Codable, Sendable {
         case posterUrl = "poster_url"
         case backdropUrl = "backdrop_url"
         case jellyfinItemId = "jellyfin_item_id"
+        case updatedAt = "updated_at"
         case communityRating = "community_rating"
         case genres
         case recommendations
@@ -305,6 +307,7 @@ struct MyTubeMovie: Identifiable, Hashable, Codable, Sendable {
         posterUrl = try container.decodeIfPresent(String.self, forKey: .posterUrl)
         backdropUrl = try container.decodeIfPresent(String.self, forKey: .backdropUrl)
         jellyfinItemId = (try? container.decode(String.self, forKey: .jellyfinItemId)) ?? ""
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
         if let rating = try? container.decode(Double.self, forKey: .communityRating) {
             communityRating = rating
         } else if let rating = try? container.decode(Int.self, forKey: .communityRating) {
@@ -520,6 +523,7 @@ struct MyTubeEpisode: Identifiable, Hashable, Codable, Sendable {
     let duration: Double
     let thumbnailUrl: String?
     let jellyfinItemId: String
+    let updatedAt: String?
     var watched: Bool
     var playbackPosition: Double
 
@@ -534,6 +538,7 @@ struct MyTubeEpisode: Identifiable, Hashable, Codable, Sendable {
         case duration
         case thumbnailUrl = "thumbnail_url"
         case jellyfinItemId = "jellyfin_item_id"
+        case updatedAt = "updated_at"
         case watched
         case playbackPosition = "playback_position"
     }
@@ -556,6 +561,7 @@ struct MyTubeEpisode: Identifiable, Hashable, Codable, Sendable {
 
         thumbnailUrl = try container.decodeIfPresent(String.self, forKey: .thumbnailUrl)
         jellyfinItemId = (try? container.decode(String.self, forKey: .jellyfinItemId)) ?? ""
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
 
         if let b = try? container.decode(Bool.self, forKey: .watched) {
             watched = b

@@ -10,9 +10,19 @@
 
 import Defaults
 import FactoryKit
+import JellyfinAPI
 import SwiftUI
 
 struct MyTubeRootView: View {
+
+    @Binding
+    private var pendingTopShelfURL: URL?
+
+    @Injected(\.currentUserSession)
+    private var userSession
+
+    @PlayMedia
+    private var playMedia
 
     enum MyTubeTab: String, CaseIterable, Identifiable {
         case subscriptions
@@ -32,6 +42,81 @@ struct MyTubeRootView: View {
 
     @State
     private var selectedTab: MyTubeTab = .subscriptions
+
+    @State
+    private var topShelfError: String?
+
+    @State
+    private var isRefreshingTopShelf = false
+
+    init(pendingTopShelfURL: Binding<URL?>) {
+        self._pendingTopShelfURL = pendingTopShelfURL
+    }
+
+    private func refreshTopShelf() async {
+        guard !isRefreshingTopShelf else { return }
+        guard let host = userSession?.server.effectiveServerURL.host else { return }
+
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = host
+        components.port = 8000
+        guard let imageBaseURL = components.url else { return }
+
+        isRefreshingTopShelf = true
+        defer { isRefreshingTopShelf = false }
+
+        do {
+            let movies = try await MyTubeClient.shared.getMoviesHome()
+            let shows = try await MyTubeClient.shared.getShowsHome()
+            try MyTubeTopShelfCache.update(
+                movies: movies,
+                shows: shows,
+                imageBaseURL: imageBaseURL
+            )
+        } catch {
+            print("MyTube Top Shelf refresh failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func playTopShelfItem(from url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let queryItems = components.queryItems,
+              let videoId = queryItems.first(where: { $0.name == "videoId" })?.value,
+              let jellyfinItemId = queryItems.first(where: { $0.name == "jellyfinItemId" })?.value,
+              let positionString = queryItems.first(where: { $0.name == "position" })?.value,
+              let position = Double(positionString),
+              let durationString = queryItems.first(where: { $0.name == "duration" })?.value,
+              let duration = Double(durationString) else {
+            topShelfError = "The selected Continue Watching item is invalid."
+            return
+        }
+
+        guard let userSession else {
+            topShelfError = MyTubeError.noActiveServer.localizedDescription
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                let entry = try await userSession.getFullItem(id: jellyfinItemId)
+                var configuration = MediaPlaybackConfiguration()
+                if position > 0 {
+                    configuration.startSeconds = .seconds(position)
+                }
+
+                let snapshot = entry.snapshot
+                let itemDuration = Double(snapshot.runTimeTicks ?? 0) / 10_000_000.0
+                MyTubePlaybackTracker.shared.startTracking(
+                    videoId: videoId,
+                    duration: duration > 0 ? duration : itemDuration
+                )
+                playMedia(intent: PlaybackIntent(item: snapshot, configuration: configuration))
+            } catch {
+                topShelfError = error.localizedDescription
+            }
+        }
+    }
 
     @StateObject
     private var subscriptionsCoordinator = NavigationCoordinator()
@@ -139,6 +224,33 @@ struct MyTubeRootView: View {
                 tabViewContent
                     .tabViewStyle(.tabBarOnly)
             }
+        }
+        .task {
+            await refreshTopShelf()
+            if let url = pendingTopShelfURL {
+                pendingTopShelfURL = nil
+                playTopShelfItem(from: url)
+            }
+        }
+        .onChange(of: pendingTopShelfURL) { _, url in
+            guard let url else { return }
+            pendingTopShelfURL = nil
+            playTopShelfItem(from: url)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .myTubeFeedNeedsRefresh)) { _ in
+            Task { @MainActor in
+                await refreshTopShelf()
+            }
+        }
+        .alert("MyTube", isPresented: Binding(
+            get: { topShelfError != nil },
+            set: { if !$0 { topShelfError = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                topShelfError = nil
+            }
+        } message: {
+            Text(topShelfError ?? "")
         }
     }
 }

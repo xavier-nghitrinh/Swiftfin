@@ -18,6 +18,7 @@ struct MyTubeThumbnailView: View {
 
     let video: MyTubeVideo
     var aspectRatio: CGFloat = MyTubeTileMetrics.aspectRatio
+    var isFocused = false
 
     @State
     private var base64Image: UIImage?
@@ -147,6 +148,11 @@ struct MyTubeThumbnailView: View {
         }
         .aspectRatio(aspectRatio, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius)
+                .stroke(isFocused ? Color.white : .clear, lineWidth: 2)
+                .allowsHitTesting(false)
+        }
         .onAppear(perform: decodeBase64IfPresent)
     }
 }

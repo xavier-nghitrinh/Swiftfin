@@ -123,17 +123,12 @@ private struct MovieShelfView: View {
                     ForEach(movies) { movie in
                         MyTubeTileButton(action: {
                             router.route(to: .myTubeMovieDetail(movie: movie, relatedMovies: movies))
-                        }) {
+                        }) { isFocused in
                             VStack(alignment: .leading, spacing: 8) {
-                                MyTubeArtworkView(
-                                    imagePath: movie.backdropUrl ?? movie.posterUrl,
-                                    placeholderSystemName: "film"
-                                )
-                                .aspectRatio(MyTubeTileMetrics.aspectRatio, contentMode: .fit)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                MyTubeThumbnailView(video: movie.asVideoItem, isFocused: isFocused)
 
                                 Text(movie.title)
-                                    .font(.callout)
+                                    .font(.caption)
                                     .fontWeight(.semibold)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
@@ -143,9 +138,6 @@ private struct MovieShelfView: View {
                                 HStack(spacing: 8) {
                                     if let releaseYear = movie.releaseYear {
                                         Text(String(releaseYear))
-                                    }
-                                    if !movie.asVideoItem.formattedDuration.isEmpty {
-                                        Text(movie.asVideoItem.formattedDuration)
                                     }
                                 }
                                 .font(.caption)

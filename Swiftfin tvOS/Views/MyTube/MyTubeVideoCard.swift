@@ -17,7 +17,7 @@ enum MyTubeTileMetrics {
     static let width: CGFloat = 420
     static let aspectRatio: CGFloat = 16.0 / 9.0
     static let cornerRadius: CGFloat = 12
-    static let titleHeight: CGFloat = 48
+    static let titleHeight: CGFloat = 42
     static let metadataHeight: CGFloat = 18
     static let horizontalSpacing: CGFloat = 30
 
@@ -29,28 +29,22 @@ enum MyTubeTileMetrics {
 struct MyTubeTileButton<Content: View>: View {
 
     private let action: () -> Void
-    private let content: Content
+    private let content: (Bool) -> Content
 
     @FocusState
     private var isFocused: Bool
 
-    init(action: @escaping () -> Void, @ViewBuilder content: () -> Content) {
+    init(action: @escaping () -> Void, @ViewBuilder content: @escaping (Bool) -> Content) {
         self.action = action
-        self.content = content()
+        self.content = content
     }
 
     var body: some View {
         Button(action: action) {
-            content
-                .contentShape(RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius))
+            content(isFocused)
         }
         .buttonStyle(.plain)
         .focused($isFocused)
-        .overlay {
-            RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius)
-                .stroke(isFocused ? Color.white : .clear, lineWidth: 3)
-                .allowsHitTesting(false)
-        }
     }
 }
 
@@ -142,13 +136,13 @@ struct MyTubeVideoCard: View {
     }
 
     var body: some View {
-        MyTubeTileButton(action: play) {
+        MyTubeTileButton(action: play) { isFocused in
             VStack(alignment: .leading, spacing: 8) {
-                MyTubeThumbnailView(video: video)
+                MyTubeThumbnailView(video: video, isFocused: isFocused)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(video.title)
-                        .font(.callout)
+                        .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
