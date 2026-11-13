@@ -1,0 +1,35 @@
+{
+  "total_channels": 22,
+  "total_video_files": 356,
+  "total_json_files": 384,
+  "total_nfo_files": 379,
+  "total_image_files": 398,
+  "other_files_count": 1,
+  "subfolder_patterns": [
+    "Season 2025",
+    "Season 2026"
+  ],
+  "matched_video_json_count": 356,
+  "missing_json_count": 0,
+  "duplicate_video_ids_count": 0,
+  "duplicate_video_ids": {},
+  "sample_json_snippet": {
+    "id": null,
+    "title": null,
+    "channel": null,
+    "channel_id": null,
+    "upload_date": null,
+    "duration": null,
+    "webpage_url": null,
+    "width": null,
+    "height": null,
+    "ext": null
+  },
+  "sample_json_keys": [
+    "-MIeX4XBJ94",
+    "16fV6_cCTKE",
+    "RZHH5unKunA",
+    "nxcP2XLS-SY",
+    "rvViyzQ-PuA"
+  ]
+}

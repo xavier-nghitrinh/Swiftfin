@@ -6,6 +6,8 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
+import FactoryKit
 import SwiftUI
 
 @main
@@ -22,10 +24,79 @@ struct SwiftfinApp: App {
             ThemePreferencesEnvironment {
                 OverlayToastView {
                     WithLocalUserAuthentication {
-                        RootView()
+                        MyTubeAppRootView()
                     }
                 }
             }
         }
     }
 }
+
+private struct MyTubeAppRootView: View {
+
+    @StateObject
+    private var rootCoordinator: RootCoordinator = .init()
+
+    var body: some View {
+        ZStack {
+            switch rootCoordinator.state {
+            case .initial:
+                ProgressView()
+            case .error:
+                ErrorView(error: rootCoordinator.error ?? ErrorMessage(L10n.unknownError))
+            case .ready:
+                MyTubeUserSessionRootView()
+            }
+        }
+        .animation(.linear(duration: 0.1), value: rootCoordinator.state)
+        .task {
+            rootCoordinator.start()
+        }
+    }
+}
+
+private struct MyTubeUserSessionRootView: View {
+
+    @Environment(\.localUserAuthenticationAction)
+    private var authenticationAction
+
+    @InjectedObject(\.userSessionManager)
+    private var userSessionManager
+
+    @Default(.Customization.Poster.configuration)
+    private var posterConfiguration
+
+    var body: some View {
+        ZStack {
+            switch userSessionManager.state {
+            case .initial:
+                ProgressView()
+
+            case .signedOut:
+                NavigationInjectionView(coordinator: .init()) {
+                    SelectUserView()
+                }
+
+            case .signedIn:
+                MyTubeRootView()
+                    .environment(\.posterConfiguration, posterConfiguration)
+                    .id(userSessionManager.currentSession.map(ObjectIdentifier.init))
+            }
+        }
+        .animation(.linear(duration: 0.1), value: userSessionManager.state)
+        .task {
+            await userSessionManager.start()
+        }
+        .onOpenURL { url in
+            guard let authenticationAction else { return }
+
+            Task {
+                await userSessionManager.handleOpenURL(
+                    url,
+                    authenticationAction: authenticationAction
+                )
+            }
+        }
+    }
+}
+

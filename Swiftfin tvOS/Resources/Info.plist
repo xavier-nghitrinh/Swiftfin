@@ -23,6 +23,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>mytube</string>
 				<string>swiftfin</string>
 				<string>jellyfin</string>
 			</array>
@@ -31,7 +32,7 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CFBundledisplayTitle</key>
-	<string>Jellyfin</string>
+	<string>MyTube</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>youtube</string>

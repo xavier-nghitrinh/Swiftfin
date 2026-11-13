@@ -1,0 +1,12 @@
+{
+  "jellyfin_version": "10.11.11",
+  "server_name": "Oppo",
+  "total_videos_in_jellyfin": 318,
+  "sample_items_count": 50,
+  "total_channels_in_jellyfin": 20,
+  "supports_direct_play": true,
+  "supports_direct_stream": true,
+  "range_request_status": 206,
+  "content_range": "bytes 0-1024/41631329",
+  "playstate_test_success": true
+}
