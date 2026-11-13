@@ -47,11 +47,8 @@ extension VideoPlayer.PlaybackControls {
                 return
             }
 
-            if press.phase == .began {
-                viewState.showControls()
-                press.resolve(.handled)
-                return
-            }
+            press.resolve(.fallback)
+            return
         }
 
         if press.phase == .began,
@@ -60,7 +57,6 @@ extension VideoPlayer.PlaybackControls {
            !viewState.isPresentingSupplement,
            viewState.presentation == .hidden || viewState.presentation == .progress || viewState.isProgressBarFocused {
             seekingPress = press.type
-            viewState.showProgress()
         }
 
         // Retain ownership through ended/cancelled, even while the newly shown
@@ -91,12 +87,6 @@ extension VideoPlayer.PlaybackControls {
                 break
             }
 
-            press.resolve(.handled)
-            return
-        }
-
-        if !viewState.isPresentingControls, press.phase == .began {
-            viewState.showControls()
             press.resolve(.handled)
             return
         }

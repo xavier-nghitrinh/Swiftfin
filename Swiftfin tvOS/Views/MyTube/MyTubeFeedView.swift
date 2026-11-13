@@ -130,7 +130,7 @@ struct MyTubeFeedView: View {
 
                     Spacer()
 
-                    // Action buttons: Sync, Swiftfin, Settings
+                    // Action buttons: Sync and Swiftfin
                     HStack(spacing: 16) {
                         Button {
                             syncLibrary()
@@ -144,9 +144,13 @@ struct MyTubeFeedView: View {
                                 }
                                 Text(isSyncing ? "Syncing..." : "Sync")
                                     .font(.callout)
+                                    .fontWeight(.semibold)
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color(white: 0.25))
                         .disabled(isSyncing)
 
                         Button {
@@ -156,20 +160,13 @@ struct MyTubeFeedView: View {
                                 Image(systemName: "square.grid.2x2")
                                 Text("Swiftfin")
                                     .font(.callout)
+                                    .fontWeight(.semibold)
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
                         }
-                        .buttonStyle(.bordered)
-
-                        Button {
-                            router.route(to: .settings)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "gearshape")
-                                Text("Settings")
-                                    .font(.callout)
-                            }
-                        }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color(white: 0.25))
                     }
                 }
                 .padding(.horizontal, 50)

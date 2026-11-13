@@ -100,7 +100,7 @@ class PlaybackService:
         }
 
         # Resolve requested quality
-        if quality == "direct":
+        if quality is None or quality == "direct":
             active_quality = "direct"
             use_hls = False
             q_cfg = quality_map["1080p"]
@@ -265,9 +265,6 @@ class PlaybackService:
 
         if should_mark_watched and not already_watched:
             jellyfin.mark_played(item_id)
-        else:
-            position_ticks = int(position_seconds * 10000000)
-            jellyfin.report_progress(item_id, position_ticks)
 
         return {
             "status": "ok",
@@ -277,6 +274,18 @@ class PlaybackService:
             "watched": should_mark_watched or already_watched,
             "remaining_seconds": remaining_seconds
         }
+
+    @staticmethod
+    def sync_progress_to_jellyfin(video_id: str, position_seconds: float) -> None:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            media, _ = find_media_item(cursor, video_id)
+            if not media:
+                logger.warning("Cannot sync Jellyfin progress: media item %s was not found", video_id)
+                return
+            item_id = media["jellyfin_item_id"]
+
+        jellyfin.report_progress(item_id, int(position_seconds * 10000000))
 
     @staticmethod
     def mark_watched(video_id: str) -> bool:

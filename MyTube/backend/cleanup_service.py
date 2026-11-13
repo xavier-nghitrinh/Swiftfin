@@ -69,12 +69,15 @@ class CleanupService:
         
         # 1. Delete via Jellyfin API (removes physical media from SSD)
         jf_success = jellyfin.delete_item(item_id)
-        
+        if not jf_success:
+            logger.error("Jellyfin could not delete %s %s; leaving it available in MyTube", media_type, video_id)
+            return {"status": "error", "message": "Jellyfin could not delete the media item"}
+
         # 2. Clean up sidecar files (.info.json, .nfo, .jpg)
         if file_path:
             base_path = os.path.splitext(file_path)[0]
             if os.path.exists(file_path) or os.path.exists(f"{base_path}.info.json"):
-                for ext in (".info.json", ".nfo", ".jpg", ".webp", ".mkv"):
+                for ext in (".info.json", ".nfo", ".jpg", ".webp"):
                     p = f"{base_path}{ext}"
                     try:
                         if os.path.exists(p):
@@ -87,7 +90,7 @@ class CleanupService:
                     client = paramiko.SSHClient()
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                     client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=5)
-                    del_cmd = f"rm -f '{base_path}.info.json' '{base_path}.nfo' '{base_path}.jpg' '{base_path}.webp' '{base_path}.mkv'"
+                    del_cmd = f"rm -f '{base_path}.info.json' '{base_path}.nfo' '{base_path}.jpg' '{base_path}.webp'"
                     client.exec_command(del_cmd)
                     client.close()
                 except Exception as e:
@@ -166,17 +169,23 @@ class CleanupService:
 
     @staticmethod
     def process_due_trash() -> Dict[str, Any]:
-        """Check all videos in trash and permanently delete items older than 30 days."""
+        """Permanently delete trashed media items after the retention period."""
         threshold_date = (datetime.now(timezone.utc) - timedelta(days=TRASH_RETENTION_DAYS)).isoformat()
         
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT video_id FROM videos
+                SELECT video_id AS media_id FROM videos
                 WHERE file_status = 'trash' AND trash_at <= ?
-            """, (threshold_date,))
+                UNION ALL
+                SELECT movie_id AS media_id FROM movies
+                WHERE file_status = 'trash' AND trash_at <= ?
+                UNION ALL
+                SELECT episode_id AS media_id FROM episodes
+                WHERE file_status = 'trash' AND trash_at <= ?
+            """, (threshold_date, threshold_date, threshold_date))
             rows = cursor.fetchall()
-            due_ids = [r["video_id"] for r in rows]
+            due_ids = [r["media_id"] for r in rows]
 
         deleted_count = 0
         for vid in due_ids:

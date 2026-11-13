@@ -54,8 +54,10 @@ extension VideoPlayer.PlaybackControls {
                         .modifier(OverlayBarButtonStyleModifier())
                 }
 
+                #if !os(tvOS)
                 TitleView(item: mediaSession.item)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                #endif
 
                 ActionButtons()
                     .frame(height: viewLayout.toolbarButtonSize)

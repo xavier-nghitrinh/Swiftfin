@@ -1,20 +1,22 @@
 import logging
+import re
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend.config import BASE_DIR
-from backend.database import init_db
+from backend.database import get_db, init_db
 from backend.scanner import scan_and_sync
 from backend.feed_service import FeedService
 from backend.playback_service import PlaybackService
 from backend.cleanup_service import CleanupService
 from backend.movies_service import MoviesService
 from backend.shows_service import ShowsService
+from backend.jellyfin_client import jellyfin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("mytube.api")
@@ -37,6 +39,7 @@ app.add_middleware(
 class ProgressPayload(BaseModel):
     position: float
     duration: float
+    sync_to_jellyfin: bool = False
 
 # Routes
 @app.get("/api/home")
@@ -83,11 +86,64 @@ def get_playback_info(
     audio_stream_index: Optional[int] = None,
     quality: Optional[str] = None
 ):
-    """Return direct Jellyfin stream/HLS URL, quality presets, audio tracks, WebVTT subtitles, and resume position."""
+    """Return proxy-backed Jellyfin stream URLs, playback options, tracks, and resume position."""
     data = PlaybackService.get_playback_data(video_id, audio_stream_index=audio_stream_index, quality=quality)
     if not data:
         raise HTTPException(status_code=404, detail="Video not found")
     return data
+
+@app.get("/api/jellyfin/{item_id}/{resource:path}")
+def proxy_jellyfin_media(item_id: str, resource: str, request: Request):
+    """Proxy browser media requests so Jellyfin credentials stay server-side."""
+    allowed_resource = (
+        resource in {"stream.mkv", "master.m3u8", "main.m3u8"}
+        or re.fullmatch(r"hls\d+/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", resource) is not None
+        or re.fullmatch(r"Images/(?:Primary|Backdrop/\d+)", resource) is not None
+        or re.fullmatch(r"(?:[0-9a-f]{32}/)?Subtitles/\d+/Stream\.vtt", resource) is not None
+    )
+    if not allowed_resource:
+        raise HTTPException(status_code=404, detail="Jellyfin resource not found")
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 1 FROM videos WHERE jellyfin_item_id = ?
+            UNION ALL SELECT 1 FROM movies WHERE jellyfin_item_id = ?
+            UNION ALL SELECT 1 FROM shows WHERE jellyfin_item_id = ?
+            UNION ALL SELECT 1 FROM episodes WHERE jellyfin_item_id = ?
+            LIMIT 1
+        """, (item_id, item_id, item_id, item_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Jellyfin item not found")
+
+    try:
+        upstream = jellyfin.proxy_media_request(
+            item_id,
+            resource,
+            dict(request.query_params),
+            request.headers.get("range"),
+        )
+    except Exception as exc:
+        logger.error("Jellyfin media proxy request failed for item %s: %s", item_id, exc)
+        raise HTTPException(status_code=502, detail="Unable to reach Jellyfin") from exc
+
+    response_headers = {
+        key: upstream.headers[key]
+        for key in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Last-Modified", "ETag")
+        if key in upstream.headers
+    }
+
+    def stream_content():
+        try:
+            yield from upstream.iter_content(chunk_size=64 * 1024)
+        finally:
+            upstream.close()
+
+    return StreamingResponse(
+        stream_content(),
+        status_code=upstream.status_code,
+        headers=response_headers,
+    )
 
 @app.get("/api/videos/{video_id}/subtitles/{sub_index}.vtt")
 def get_video_subtitle_vtt(video_id: str, sub_index: int):
@@ -98,9 +154,16 @@ def get_video_subtitle_vtt(video_id: str, sub_index: int):
     return Response(content=vtt, media_type="text/vtt; charset=utf-8")
 
 @app.post("/api/videos/{video_id}/progress")
-def report_playback_progress(video_id: str, payload: ProgressPayload):
+def report_playback_progress(video_id: str, payload: ProgressPayload, background_tasks: BackgroundTasks):
     """Report playback position. Automatically marks watched if remaining time < 30 seconds."""
-    return PlaybackService.update_progress(video_id, payload.position, payload.duration)
+    result = PlaybackService.update_progress(video_id, payload.position, payload.duration)
+    if payload.sync_to_jellyfin and result["status"] == "ok" and not result["watched"]:
+        background_tasks.add_task(
+            PlaybackService.sync_progress_to_jellyfin,
+            video_id,
+            payload.position,
+        )
+    return result
 
 @app.post("/api/videos/{video_id}/watched")
 def mark_video_watched(video_id: str):

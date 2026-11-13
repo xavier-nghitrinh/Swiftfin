@@ -72,7 +72,6 @@ struct MyTubeShowsView: View {
                 }
 
                 if let home = data {
-                    // Continue Watching
                     if !home.continueWatching.isEmpty {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Continue Watching")
@@ -83,33 +82,25 @@ struct MyTubeShowsView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 LazyHStack(spacing: 30) {
                                     ForEach(home.continueWatching) { item in
-                                        if let ep = item.currentEpisode {
-                                            MyTubeVideoCard(video: ep.asVideoItem)
+                                        if let episode = item.currentEpisode {
+                                            MyTubeVideoCard(video: episode.asVideoItem)
                                                 .frame(width: 420)
                                         }
                                     }
                                 }
                                 .padding(.horizontal, 50)
-                                .padding(.vertical, 10)
+                                .padding(.vertical, 30)
                             }
                         }
                     }
 
-                    // Recently Added
                     if !home.recentlyAdded.isEmpty {
-                        ShowShelfView(
-                            title: "Recently Added",
-                            shows: home.recentlyAdded
-                        )
+                        ShowShelfView(title: "Recently Added", shows: home.recentlyAdded)
                     }
 
-                    // Genres
                     ForEach(home.genres) { shelf in
                         if !shelf.shows.isEmpty {
-                            ShowShelfView(
-                                title: shelf.genre,
-                                shows: shelf.shows
-                            )
+                            ShowShelfView(title: shelf.genre, shows: shelf.shows)
                         }
                     }
                 }
@@ -151,16 +142,22 @@ private struct ShowShelfView: View {
                             router.route(to: .myTubeShowDetail(show: show))
                         } label: {
                             VStack(alignment: .leading, spacing: 8) {
-                                ShowPosterView(posterUrl: show.posterUrl ?? show.backdropUrl)
-                                    .frame(width: 260, height: 390)
-                                    .cornerRadius(12)
+                                MyTubeArtworkView(
+                                    imagePath: show.backdropUrl ?? show.posterUrl,
+                                    placeholderSystemName: "tv"
+                                )
+                                .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
 
                                 Text(show.title)
                                     .font(.callout)
                                     .fontWeight(.semibold)
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 4)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                    .foregroundStyle(.primary)
                             }
+                            .frame(width: 420, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.card)
                     }
@@ -197,8 +194,18 @@ struct MyTubeShowDetailView: View {
 
         do {
             detail = try await MyTubeClient.shared.getShowDetail(showId: show.showId)
-            if let firstSeason = detail?.seasons.first?.seasonNumber {
-                selectedSeason = firstSeason
+            if let seasons = detail?.seasons, !seasons.isEmpty {
+                let currentlyWatching = seasons
+                    .flatMap(\.episodes)
+                    .filter { !$0.watched && $0.playbackPosition > 0 }
+                    .max { lhs, rhs in
+                        lhs.seasonNumber == rhs.seasonNumber
+                            ? lhs.episodeNumber < rhs.episodeNumber
+                            : lhs.seasonNumber < rhs.seasonNumber
+                    }
+                selectedSeason = currentlyWatching?.seasonNumber
+                    ?? seasons.first(where: { $0.seasonNumber == 1 })?.seasonNumber
+                    ?? seasons[0].seasonNumber
             }
         } catch {
             print("Failed to load show detail: \(error)")
@@ -210,41 +217,67 @@ struct MyTubeShowDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                // Header
-                HStack(alignment: .top, spacing: 30) {
-                    ShowPosterView(posterUrl: show.posterUrl ?? show.backdropUrl)
-                        .frame(width: 220, height: 330)
-                        .cornerRadius(12)
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(show.title)
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-
-                        if let overview = detail?.overview ?? show.overview, !overview.isEmpty {
-                            Text(overview)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(5)
-                        }
-
-                        if let seasons = detail?.seasons, seasons.count > 1 {
-                            Picker("Season", selection: $selectedSeason) {
-                                ForEach(seasons) { s in
-                                    Text(s.seasonName).tag(s.seasonNumber)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .padding(.top, 10)
-                        }
+                ZStack(alignment: .leading) {
+                    MyTubeArtworkView(
+                        imagePath: detail?.backdropUrl ?? show.backdropUrl ?? show.posterUrl,
+                        placeholderSystemName: "tv"
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 380)
+                    .overlay {
+                        LinearGradient(
+                            colors: [.black.opacity(0.15), .black.opacity(0.95)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
                     }
 
-                    Spacer()
-                }
-                .padding(.horizontal, 50)
-                .padding(.top, 20)
+                    HStack(alignment: .bottom, spacing: 30) {
+                        MyTubeArtworkView(
+                            imagePath: detail?.posterUrl ?? show.posterUrl ?? show.backdropUrl,
+                            placeholderSystemName: "tv"
+                        )
+                        .frame(width: 180, height: 270)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                // Episodes Grid
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(detail?.title ?? show.title)
+                                .font(.largeTitle)
+                                .fontWeight(.bold)
+
+                            if let overview = detail?.overview ?? show.overview, !overview.isEmpty {
+                                Text(overview)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(5)
+                            }
+
+                            if let seasons = detail?.seasons, seasons.count > 1 {
+                                if seasons.count < 6 {
+                                    Picker("Season", selection: $selectedSeason) {
+                                        ForEach(seasons) { season in
+                                            Text(season.seasonName).tag(season.seasonNumber)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
+                                } else {
+                                    Picker("Season", selection: $selectedSeason) {
+                                        ForEach(seasons) { season in
+                                            Text(season.seasonName).tag(season.seasonNumber)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                }
+                                .padding(.top, 10)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.horizontal, 50)
+                    .padding(.bottom, 28)
+                }
+                .frame(height: 380)
+
                 if let currentSeason = detail?.seasons.first(where: { $0.seasonNumber == selectedSeason }) {
                     VStack(alignment: .leading, spacing: 20) {
                         Text("\(currentSeason.seasonName) Episodes")
@@ -253,8 +286,8 @@ struct MyTubeShowDetailView: View {
                             .padding(.horizontal, 50)
 
                         LazyVGrid(columns: columns, spacing: 40) {
-                            ForEach(currentSeason.episodes) { ep in
-                                MyTubeVideoCard(video: ep.asVideoItem)
+                            ForEach(currentSeason.episodes) { episode in
+                                MyTubeVideoCard(video: episode.asVideoItem)
                             }
                         }
                         .padding(.horizontal, 50)
@@ -265,50 +298,6 @@ struct MyTubeShowDetailView: View {
         }
         .task {
             await loadDetail()
-        }
-    }
-}
-
-private struct ShowPosterView: View {
-
-    @Injected(\.currentUserSession)
-    private var userSession
-
-    let posterUrl: String?
-
-    private var imageURL: URL? {
-        guard let p = posterUrl, !p.isEmpty else { return nil }
-        if p.starts(with: "http://") || p.starts(with: "https://") {
-            return URL(string: p)
-        }
-        if let host = userSession?.server.effectiveServerURL.host {
-            let path = p.starts(with: "/") ? p : "/" + p
-            return URL(string: "http://\(host):8000\(path)")
-        }
-        return nil
-    }
-
-    var body: some View {
-        if let imageURL {
-            AsyncImage(url: imageURL) { phase in
-                switch phase {
-                case let .success(img):
-                    img.resizable().scaledToFill()
-                default:
-                    placeholder
-                }
-            }
-        } else {
-            placeholder
-        }
-    }
-
-    private var placeholder: some View {
-        ZStack {
-            Color(white: 0.2)
-            Image(systemName: "tv")
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
         }
     }
 }

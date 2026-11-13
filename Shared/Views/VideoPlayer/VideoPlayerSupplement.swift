@@ -41,7 +41,11 @@ extension VideoPlayerSupplementType {
     func makeSupplement(for item: MediaPlayerItem, queue: any MediaPlayerQueue?) -> (any VideoPlayerSupplement)? {
         switch self {
         case .info:
+            #if os(tvOS)
+            return nil
+            #else
             return MediaInfoSupplement(item: item.baseItem)
+            #endif
 
         case .chapters:
             guard item.chapters.isNotEmpty else { return nil }

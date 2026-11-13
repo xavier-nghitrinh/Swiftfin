@@ -42,7 +42,7 @@ const Player = {
   isActive: false,
   isPseudoFs: false,
   wantPlaying: false,
-  currentQuality: 'auto',
+  currentQuality: 'direct',
   lastHideTime: 0,
   autoResumedOnHide: false,
   hlsInstance: null,
@@ -60,14 +60,14 @@ const Player = {
   wasOverlayVisibleOnDown: true,
   holdTimer: null,
   progressSyncInterval: null,
+  progressSyncInFlight: false,
+  lastJellyfinProgressSync: 0,
   overlayHideTimeout: null,
   onWatchedAutoTriggered: null,
 
   // Double-tap & Tap state
   doubleTapLeft: null,
   doubleTapRight: null,
-  doubleTapLeftText: null,
-  doubleTapRightText: null,
   lastTapTime: 0,
   lastTapZone: null,
   singleTapTimer: null,
@@ -81,8 +81,6 @@ const Player = {
     this.bottomBar = document.getElementById('player-bottom-bar');
     this.doubleTapLeft = document.getElementById('double-tap-left');
     this.doubleTapRight = document.getElementById('double-tap-right');
-    this.doubleTapLeftText = document.getElementById('double-tap-left-text');
-    this.doubleTapRightText = document.getElementById('double-tap-right-text');
     this.subtitleOverlay = document.getElementById('player-subtitle-overlay');
     this.titleEl = document.getElementById('player-title');
     this.seekbar = document.getElementById('player-seekbar');
@@ -249,18 +247,6 @@ const Player = {
       setTimeout(() => this.updatePseudoOrientation(), 60);
     });
 
-    document.getElementById('player-rewind-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.video.currentTime = Math.max(0, this.video.currentTime - 10);
-      this.showOverlay();
-    });
-    document.getElementById('player-forward-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      const dur = this.video.duration || (this.playbackData?.duration || 0);
-      this.video.currentTime = Math.min(dur, this.video.currentTime + 10);
-      this.showOverlay();
-    });
-
     this.fullscreenBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.toggleFullscreen();
@@ -275,20 +261,20 @@ const Player = {
     if (this.qualityBtn) {
       this.qualityBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.toggleDropdown(this.qualityMenu);
+        this.toggleDropdown(this.qualityMenu, e.currentTarget);
       });
     }
     this.audioBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.toggleDropdown(this.audioMenu);
+      this.toggleDropdown(this.audioMenu, e.currentTarget);
     });
     this.subBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.toggleDropdown(this.subMenu);
+      this.toggleDropdown(this.subMenu, e.currentTarget);
     });
     this.speedBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.toggleDropdown(this.speedMenu);
+      this.toggleDropdown(this.speedMenu, e.currentTarget);
     });
 
     this.speedMenu.querySelectorAll('.menu-item').forEach((item) => {
@@ -376,7 +362,7 @@ const Player = {
         }
         this.onTimeUpdate();
 
-        this.showDoubleTapFeedback(zone, (this.consecutiveTapCount - 1) * 10);
+        this.showDoubleTapFeedback(zone);
 
         if (this.lastPointerType === 'touch') {
           this.hideOverlay();
@@ -541,18 +527,13 @@ const Player = {
     });
   },
 
-  showDoubleTapFeedback(zone, totalSeconds) {
+  showDoubleTapFeedback(zone) {
     const el = zone === 'left' ? this.doubleTapLeft : this.doubleTapRight;
-    const textEl = zone === 'left' ? this.doubleTapLeftText : this.doubleTapRightText;
     const otherEl = zone === 'left' ? this.doubleTapRight : this.doubleTapLeft;
 
     if (otherEl) {
       otherEl.classList.remove('active');
       otherEl.style.display = 'none';
-    }
-
-    if (textEl) {
-      textEl.textContent = `${totalSeconds} seconds`;
     }
 
     if (el) {
@@ -777,7 +758,7 @@ const Player = {
     this.onWatchedAutoTriggered = onWatchedAuto;
     this.playbackData = playbackData;
     this.currentVideo = playbackData;
-    this.currentQuality = playbackData.current_quality || 'auto';
+    this.currentQuality = playbackData.current_quality || 'direct';
     this.titleEl.textContent = playbackData.title;
     this.showOverlay();
 
@@ -867,7 +848,7 @@ const Player = {
   buildQualityMenu(qualities, currentQuality) {
     if (!this.qualityMenu) return;
     this.qualityMenu.innerHTML = '';
-    this.currentQuality = currentQuality || 'auto';
+    this.currentQuality = currentQuality || 'direct';
     if (!qualities || qualities.length === 0) {
       if (this.qualityBtn) this.qualityBtn.style.display = 'none';
       return;
@@ -1228,13 +1209,40 @@ const Player = {
     );
   },
 
-  toggleDropdown(menu) {
+  toggleDropdown(menu, anchor) {
     if (!menu) return;
     const isShowing = menu.classList.contains('active');
     this.closeAllDropdowns();
     if (!isShowing) {
+      const fullscreenRoot = document.fullscreenElement === this.container ||
+        this.container.classList.contains('pseudo-fullscreen');
+      (fullscreenRoot ? this.container : document.body).appendChild(menu);
       menu.classList.add('active');
+      this.container.classList.add('dropdown-open');
       if (this.overlayHideTimeout) clearTimeout(this.overlayHideTimeout);
+      if (!anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const narrowScreen = window.matchMedia('(max-width: 1080px)').matches;
+      const viewportHeight = window.innerHeight;
+      const playerRect = this.container.getBoundingClientRect();
+      const belowPlayerTop = playerRect.bottom + 8;
+      const maxHeight = Math.min(
+        240,
+        Math.max(100, viewportHeight - (narrowScreen ? belowPlayerTop : 16) - 8)
+      );
+      menu.style.maxHeight = `${maxHeight}px`;
+      const height = Math.min(menu.scrollHeight, maxHeight);
+      const width = menu.offsetWidth;
+      let top = narrowScreen ? belowPlayerTop : rect.top - height - 8;
+      if (narrowScreen && top + height > viewportHeight - 8) {
+        top = rect.top - height - 8;
+      } else if (top < 8) {
+        top = Math.min(window.innerHeight - height - 8, rect.bottom + 8);
+      }
+      const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width));
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
     }
   },
 
@@ -1243,6 +1251,7 @@ const Player = {
     this.audioMenu.classList.remove('active');
     this.subMenu.classList.remove('active');
     this.speedMenu.classList.remove('active');
+    if (this.container) this.container.classList.remove('dropdown-open');
   },
 
   showOverlay() {
@@ -1307,7 +1316,7 @@ const Player = {
     this.wantPlaying = false;
     if (this.currentVideo) {
       const dur = this.video.duration || this.currentVideo.duration || 0;
-      const res = await api.reportProgress(this.currentVideo.video_id, dur, dur);
+      const res = await api.reportProgress(this.currentVideo.video_id, dur, dur, true);
       if (res && res.watched && this.onWatchedAutoTriggered) {
         this.onWatchedAutoTriggered();
       }
@@ -1316,23 +1325,33 @@ const Player = {
 
   startProgressSync() {
     this.stopProgressSync();
+    this.lastJellyfinProgressSync = 0;
     this.progressSyncInterval = setInterval(async () => {
+      if (this.progressSyncInFlight) return;
       const dur = this.video.duration || (this.currentVideo?.duration || 0);
       if (this.currentVideo && !this.video.paused && dur > 0) {
-        this.updateMediaSessionPosition();
-        const res = await api.reportProgress(
-          this.currentVideo.video_id,
-          this.video.currentTime,
-          dur
-        );
-        if (res && res.watched && !this.currentVideo.watched) {
-          this.currentVideo.watched = true;
-          if (this.onWatchedAutoTriggered) {
-            this.onWatchedAutoTriggered();
+        this.progressSyncInFlight = true;
+        const syncToJellyfin = Date.now() - this.lastJellyfinProgressSync >= 30000;
+        try {
+          this.updateMediaSessionPosition();
+          const res = await api.reportProgress(
+            this.currentVideo.video_id,
+            this.video.currentTime,
+            dur,
+            syncToJellyfin
+          );
+          if (syncToJellyfin && res) this.lastJellyfinProgressSync = Date.now();
+          if (res && res.watched && !this.currentVideo.watched) {
+            this.currentVideo.watched = true;
+            if (this.onWatchedAutoTriggered) {
+              this.onWatchedAutoTriggered();
+            }
           }
+        } finally {
+          this.progressSyncInFlight = false;
         }
       }
-    }, 3000);
+    }, 5000);
   },
 
   stopProgressSync() {
@@ -1384,7 +1403,8 @@ const Player = {
       api.reportProgress(
         this.currentVideo.video_id,
         this.video.currentTime,
-        dur
+        dur,
+        true
       );
     }
     if (this.isActive) {

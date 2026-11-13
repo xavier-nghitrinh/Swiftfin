@@ -6,7 +6,7 @@ import paramiko
 from collections import defaultdict
 from pathlib import Path
 
-SSH_HOST = "192.168.1.101"
+SSH_HOST = "192.168.1.131"
 SSH_PORT = 8022
 SSH_USER = "u"
 SSH_PASS = "16468878"

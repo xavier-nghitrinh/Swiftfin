@@ -1075,7 +1075,7 @@ Sau khi có audit_report.json, đặc biệt là một vài file .info.json mẫ
 
 
 --yêu cầu thêm
-Jellyfin đang chạy ở server http://192.168.1.101:8096/
+Jellyfin đang chạy ở server http://192.168.1.131:8096/
 API Key tài khoản admin của Jellyfin 8fabc2d942a64cb5bc9db064976dc3d7
 đã có sẵn library tên YouTube
 dùng cá nhân / locallan / private vpn nên ko cần quá lo về bảo mật, logging
@@ -1090,6 +1090,6 @@ server mytupe ko nhất thiết chạy trên cùng thiết bị, có thể có, 
 
 media đang nằm trong 1 ssd kết nối với android làm server chạy jellyfin, nếu cần xem data
 
-ssh u@192.168.1.101 -p 8022
+ssh u@192.168.1.131 -p 8022
 password 16468878
 youtube_scrapper\runner.py đang chạy bên đó

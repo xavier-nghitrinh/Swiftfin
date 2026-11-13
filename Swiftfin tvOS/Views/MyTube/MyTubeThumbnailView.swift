@@ -93,7 +93,6 @@ struct MyTubeThumbnailView: View {
                 .background(Color.black.opacity(0.4))
                 .cornerRadius(12)
 
-            // Duration Pill
             if !video.formattedDuration.isEmpty {
                 HStack {
                     Spacer()
@@ -109,7 +108,6 @@ struct MyTubeThumbnailView: View {
                 }
             }
 
-            // Watched Indicator
             if video.watched {
                 VStack {
                     HStack {
@@ -131,7 +129,6 @@ struct MyTubeThumbnailView: View {
                 }
             }
 
-            // Progress Bar (if partially watched)
             if video.isPartiallyWatched {
                 GeometryReader { geo in
                     VStack {
@@ -151,8 +148,80 @@ struct MyTubeThumbnailView: View {
                 .cornerRadius(2.5)
             }
         }
-        .onAppear {
-            decodeBase64IfPresent()
+        .onAppear(perform: decodeBase64IfPresent)
+    }
+}
+
+struct MyTubeArtworkView: View {
+
+    @Injected(\.currentUserSession)
+    private var userSession
+
+    let imagePath: String?
+    let placeholderSystemName: String
+
+    @State
+    private var base64Image: UIImage?
+
+    private var imageURL: URL? {
+        guard let imagePath, !imagePath.isEmpty,
+              !imagePath.starts(with: "data:image/") else { return nil }
+
+        if imagePath.starts(with: "http://") || imagePath.starts(with: "https://") {
+            return URL(string: imagePath)
+        }
+
+        guard let host = userSession?.server.effectiveServerURL.host else { return nil }
+        let path = imagePath.starts(with: "/") ? imagePath : "/" + imagePath
+        return URL(string: "http://\(host):8000\(path)")
+    }
+
+    private func decodeBase64IfPresent() {
+        guard let imagePath, imagePath.starts(with: "data:image/"),
+              let commaIndex = imagePath.firstIndex(of: ",") else { return }
+
+        let encodedImage = String(imagePath[imagePath.index(after: commaIndex)...])
+        guard let data = Data(base64Encoded: encodedImage, options: .ignoreUnknownCharacters) else { return }
+        base64Image = UIImage(data: data)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            Group {
+                if let base64Image {
+                    Image(uiImage: base64Image)
+                        .resizable()
+                        .scaledToFill()
+                } else if let imageURL {
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case let .success(image):
+                            image.resizable().scaledToFill()
+                        case .empty:
+                            ZStack {
+                                Color(white: 0.15)
+                                ProgressView()
+                            }
+                        default:
+                            placeholder
+                        }
+                    }
+                } else {
+                    placeholder
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+        }
+        .onAppear(perform: decodeBase64IfPresent)
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            Color(white: 0.15)
+            Image(systemName: placeholderSystemName)
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
         }
     }
 }

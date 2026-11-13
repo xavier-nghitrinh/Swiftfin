@@ -22,6 +22,12 @@ extension NavigationRoute {
         }
     }
 
+    static func myTubeMovieDetail(movie: MyTubeMovie, relatedMovies: [MyTubeMovie]) -> NavigationRoute {
+        NavigationRoute(id: "myTubeMovieDetail-\(movie.movieId)") {
+            MyTubeMovieDetailView(movie: movie, relatedMovies: relatedMovies)
+        }
+    }
+
     static var swiftfinHome: NavigationRoute {
         NavigationRoute(id: "swiftfinHome") {
             MainTabView()

@@ -2,7 +2,7 @@ import json
 import requests
 from pathlib import Path
 
-JELLYFIN_URL = "http://192.168.1.101:8096"
+JELLYFIN_URL = "http://192.168.1.131:8096"
 API_TOKEN = "8fabc2d942a64cb5bc9db064976dc3d7"
 USER_ID = "8c331f6343d84e359fa237a927a4e14f" # user xavier
 LIBRARY_ID = "34f331a89ce405e2b877d68d5ee4d4a2" # YouTube library

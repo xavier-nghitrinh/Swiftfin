@@ -5,9 +5,12 @@ MyTube is a lightweight, self-hosted YouTube system that turns downloaded videos
 ## Architecture
 
 - **Backend:** FastAPI (Python 3.13) + SQLite. Runs locally on Windows PC (`http://localhost:8000`).
-- **Media Engine:** Jellyfin server at `http://192.168.1.101:8096`.
+- **Database:** `I:\mytube.db` on Windows when `I:\` is available; otherwise `data\mytube.db`. Android uses its configured external-storage root. Override with `MYTUBE_DB_PATH` or `MYTUBE_STORAGE_ROOT`.
+- **Media Engine:** Jellyfin server at `http://192.168.1.131:8096`.
 - **Storage:** External SSD mounted on Android (`/storage/0692F50692F4FACF/yt_video`), synced via SSH + Jellyfin API.
 - **Client:** Modern Progressive Web App (PWA) compatible with Desktop Chrome/Edge/Firefox, Android phones/tablets, and iPhone/iPad.
+
+For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_SETUP.md](./JELLYFIN_SETUP.md).
 
 ---
 

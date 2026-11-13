@@ -473,6 +473,10 @@ body {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
 }
 
+.player-container.dropdown-open {
+  touch-action: pan-y;
+}
+
 .player-container *,
 .player-container video {
   -webkit-touch-callout: none;
@@ -591,16 +595,6 @@ video {
   border-bottom-left-radius: 50% 100%;
 }
 
-.double-tap-ripple {
-  position: absolute;
-  inset: 0;
-  background: rgba(255, 255, 255, 0.16);
-  border-radius: inherit;
-  transform: scale(0.8);
-  opacity: 0;
-  transition: transform 0.25s cubic-bezier(0.1, 0.9, 0.2, 1), opacity 0.2s ease;
-}
-
 .double-tap-content {
   position: relative;
   display: flex;
@@ -631,22 +625,10 @@ video {
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.double-tap-text {
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  white-space: nowrap;
-}
-
 /* Active State for Double-Tap */
 .double-tap-indicator.active {
   display: flex !important;
   opacity: 1;
-}
-
-.double-tap-indicator.active .double-tap-ripple {
-  opacity: 1;
-  transform: scale(1);
 }
 
 .double-tap-left.active .arrow-1 { animation: arrowPulseLeft 0.5s infinite 0.2s; }
@@ -804,20 +786,21 @@ video {
 
 /* Dropdown Menus inside Player */
 .dropdown-menu {
-  position: absolute;
-  bottom: 58px;
-  right: 16px;
+  position: fixed;
   background: rgba(32, 32, 32, 0.96);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 6px 0;
   min-width: 190px;
-  max-height: 240px;
+  max-height: min(240px, calc(100dvh - 16px));
   overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.8);
   display: none;
-  z-index: 40;
+  z-index: 10000;
 }
 
 .dropdown-menu.active {
@@ -829,6 +812,7 @@ video {
   font-size: 0.88rem;
   color: #fff;
   cursor: pointer;
+  touch-action: manipulation;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1539,14 +1523,36 @@ video {
   padding: 0 2px;
 }
 
+.media-card-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .media-card-title {
+  flex: 1;
   font-size: 0.88rem;
   font-weight: 600;
   line-height: 1.25;
   color: var(--text-main);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.media-card-action-btn {
+  flex-shrink: 0;
+  margin: -5px -5px 0 0;
+  padding: 4px;
+  color: var(--text-muted);
+}
+
+.episode-action-btn {
+  flex-shrink: 0;
+  margin: -5px -5px 0 0;
+  padding: 4px;
+  color: var(--text-muted);
 }
 
 .media-card-sub {
@@ -1838,23 +1844,22 @@ video {
 
 .episode-header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
 }
 
 .episode-title {
+  flex: 1;
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-main);
   line-height: 1.25;
-}
-
-.episode-number {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-weight: 600;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .episode-desc {
@@ -1868,10 +1873,7 @@ video {
   overflow: hidden;
 }
 
-/* ==========================================================================
-   Cinema Mode Player (For Movies & Shows)
-   Requirement: "player page with only player, no watch next, no recommend"
-   ========================================================================== */
+/* Cinema Mode Player (For Movies & Shows) */
 .watch-layout.watch-cinema-mode {
   grid-template-columns: 1fr !important;
   max-width: 1280px;

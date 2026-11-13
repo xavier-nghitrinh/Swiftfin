@@ -1,11 +1,118 @@
+import asyncio
 import sys
+from contextlib import nullcontext
 from pathlib import Path
+from fastapi import BackgroundTasks
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from starlette.testclient import TestClient
-from backend.main import app
+from backend.main import app, report_playback_progress, ProgressPayload
+from backend.playback_service import PlaybackService
+from backend.cleanup_service import CleanupService
+import backend.playback_service as playback_service
+import backend.cleanup_service as cleanup_service
 
 client = TestClient(app)
+
+def test_playback_defaults_to_original_direct(monkeypatch):
+    media = {
+        "video_id": "test-video",
+        "jellyfin_item_id": "jellyfin-item",
+        "title": "Test video",
+        "channel_name": "Test channel",
+        "duration": 120,
+        "playback_position": 0,
+        "watched": False,
+    }
+
+    class FakeConnection:
+        def cursor(self):
+            return object()
+
+    monkeypatch.setattr(playback_service, "get_db", lambda: nullcontext(FakeConnection()))
+    monkeypatch.setattr(playback_service, "find_media_item", lambda cursor, video_id: (media, "video"))
+    monkeypatch.setattr(playback_service.jellyfin, "get_item_details", lambda item_id: {})
+    monkeypatch.setattr(playback_service.jellyfin, "stop_active_encodings", lambda device_id: None)
+    monkeypatch.setattr(playback_service.jellyfin, "get_stream_url", lambda *args, **kwargs: "/direct")
+    monkeypatch.setattr(playback_service.jellyfin, "get_hls_url", lambda *args, **kwargs: "/hls")
+    monkeypatch.setattr(playback_service.jellyfin, "get_hls_ios_url", lambda *args, **kwargs: "/hls-ios")
+
+    result = PlaybackService.get_playback_data("test-video")
+
+    assert result["current_quality"] == "direct"
+    assert result["use_hls"] is False
+    assert next(q for q in result["qualities"] if q["id"] == "direct")["is_active"] is True
+
+
+def test_progress_jellyfin_sync_is_backgrounded(monkeypatch):
+    sync_calls = []
+    monkeypatch.setattr(
+        PlaybackService,
+        "update_progress",
+        staticmethod(lambda video_id, position, duration: {"status": "ok", "watched": False}),
+    )
+    monkeypatch.setattr(
+        PlaybackService,
+        "sync_progress_to_jellyfin",
+        staticmethod(lambda video_id, position: sync_calls.append((video_id, position))),
+    )
+
+    background_tasks = BackgroundTasks()
+    result = report_playback_progress(
+        "test-video",
+        ProgressPayload(position=12, duration=100),
+        background_tasks,
+    )
+    assert result["status"] == "ok"
+    assert background_tasks.tasks == []
+    assert sync_calls == []
+
+    background_tasks = BackgroundTasks()
+    report_playback_progress(
+        "test-video",
+        ProgressPayload(position=17, duration=100, sync_to_jellyfin=True),
+        background_tasks,
+    )
+    assert sync_calls == []
+    assert len(background_tasks.tasks) == 1
+    asyncio.run(background_tasks())
+    assert sync_calls == [("test-video", 17)]
+
+
+def test_due_trash_includes_movies_and_episodes(monkeypatch):
+    class FakeCursor:
+        def execute(self, query, params):
+            assert "FROM movies" in query
+            assert "FROM episodes" in query
+            assert len(params) == 3
+
+        def fetchall(self):
+            return [{"media_id": "movie-id"}, {"media_id": "episode-id"}]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def cursor(self):
+            return FakeCursor()
+
+    deleted_ids = []
+    monkeypatch.setattr(cleanup_service, "get_db", lambda: FakeConnection())
+    monkeypatch.setattr(
+        CleanupService,
+        "delete_permanently",
+        staticmethod(lambda media_id: deleted_ids.append(media_id) or {"status": "ok"}),
+    )
+
+    result = CleanupService.process_due_trash()
+
+    assert result == {"due_count": 2, "deleted_count": 2}
+    assert deleted_ids == ["movie-id", "episode-id"]
+
 
 def test_api():
     print("=== Testing MyTube Backend API ===")

@@ -51,5 +51,9 @@ enum VideoPlayerSupplementType: String, CaseIterable, Displayable, Equatable, Id
         }
     }
 
+    #if os(tvOS)
+    static let supportedCases: [VideoPlayerSupplementType] = [.chapters, .queue]
+    #else
     static let supportedCases: [VideoPlayerSupplementType] = [.info, .chapters, .queue]
+    #endif
 }

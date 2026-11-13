@@ -50,7 +50,11 @@ private struct TextSubtitleOverlayContent: View {
     let videoLayout: VideoPlayer.VideoLayout
 
     private var basePointSize: CGFloat {
+        #if os(tvOS)
+        viewLayout.value(standard: 21, large: 36) * 1.5
+        #else
         viewLayout.value(standard: 21, large: 36)
+        #endif
     }
 
     private static var currentSystemStyle: CaptionStyle {
@@ -89,5 +93,8 @@ private struct TextSubtitleOverlayContent: View {
             }
         }
         .onNotification(.applicationDidBecomeActive, perform: refreshCaptionStyle)
+        #if os(tvOS)
+        .offset(y: -60)
+        #endif
     }
 }

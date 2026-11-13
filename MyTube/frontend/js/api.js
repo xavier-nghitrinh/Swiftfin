@@ -54,12 +54,12 @@ const api = {
     return await res.json();
   },
 
-  async reportProgress(videoId, position, duration) {
+  async reportProgress(videoId, position, duration, syncToJellyfin = false) {
     try {
       const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ position, duration }),
+        body: JSON.stringify({ position, duration, sync_to_jellyfin: syncToJellyfin }),
         keepalive: true
       });
       return await res.json();

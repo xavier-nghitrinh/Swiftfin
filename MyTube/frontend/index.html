@@ -115,28 +115,24 @@
         <!-- Left / Primary Column: Player & Details -->
         <div class="watch-primary">
           <div class="player-container" id="player-container">
-            <!-- Double Tap Seek Indicators (Left: Rewind, Right: Forward) -->
+            <!-- Double Tap Seek Indicators -->
             <div class="double-tap-indicator double-tap-left" id="double-tap-left" style="display: none;">
-              <div class="double-tap-ripple"></div>
               <div class="double-tap-content">
                 <div class="double-tap-arrows">
                   <svg class="arrow arrow-1" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
                   <svg class="arrow arrow-2" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
                   <svg class="arrow arrow-3" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
                 </div>
-                <div class="double-tap-text" id="double-tap-left-text">10 seconds</div>
               </div>
             </div>
 
             <div class="double-tap-indicator double-tap-right" id="double-tap-right" style="display: none;">
-              <div class="double-tap-ripple"></div>
               <div class="double-tap-content">
                 <div class="double-tap-arrows">
                   <svg class="arrow arrow-1" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
                   <svg class="arrow arrow-2" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
                   <svg class="arrow arrow-3" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
                 </div>
-                <div class="double-tap-text" id="double-tap-right-text">10 seconds</div>
               </div>
             </div>
 
@@ -173,12 +169,6 @@
                   <div class="controls-left">
                     <button class="btn-icon" id="player-play-btn" title="Play/Pause (k)">
                       <svg id="play-pause-icon" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    </button>
-                    <button class="btn-icon" id="player-rewind-btn" title="Rewind 10s (j)">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.2 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>
-                    </button>
-                    <button class="btn-icon" id="player-forward-btn" title="Forward 10s (l)">
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11.5 8c2.65 0 5.05.99 6.9 2.6L22 7v9h-9l3.62-3.62c-1.39-1.2-3.16-1.88-5.12-1.88-3.54 0-6.55 2.31-7.6 5.5l-2.37-.78C2.92 11.03 6.85 8 11.5 8z"/></svg>
                     </button>
                     <span class="time-display" id="player-time-display">0:00 / 0:00</span>
                   </div>

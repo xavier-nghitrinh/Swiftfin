@@ -183,10 +183,22 @@ const App = {
       this.hidePopover();
       if (!video) return;
 
-      await api.moveToTrash(video.video_id);
-      if (cardEl) cardEl.remove();
-      this.showToast('Moved to Trash (auto-deletes in 30 days)');
-      this.updateStats();
+      try {
+        const result = await api.moveToTrash(video.video_id);
+        if (!result || result.status !== 'ok') {
+          throw new Error(result?.message || 'Failed to move media to Trash');
+        }
+        if (video.media_type === 'movie' || video.media_type === 'episode') {
+          this.handleRoute(true);
+        } else if (cardEl) {
+          cardEl.remove();
+        }
+        this.showToast('Moved to Trash');
+        this.updateStats();
+      } catch (error) {
+        console.error('Failed to move media to Trash:', error);
+        this.showToast('Failed to move to Trash');
+      }
     });
 
     // Close popover on outside click or scroll
@@ -299,7 +311,7 @@ const App = {
           !Player.isPseudoLandscape() &&
           touchStartTarget &&
           touchStartTarget.closest('#player-container') &&
-          !touchStartTarget.closest('.seekbar, .seekbar-container') &&
+          !touchStartTarget.closest('.seekbar, .seekbar-container, .dropdown-menu') &&
           dy > 95 &&
           Math.abs(dx) < 60
         ) {
@@ -322,7 +334,7 @@ const App = {
         !document.fullscreenElement &&
         touchStartTarget &&
         touchStartTarget.closest('#player-container') &&
-        !touchStartTarget.closest('.seekbar, .seekbar-container') &&
+        !touchStartTarget.closest('.seekbar, .seekbar-container, .dropdown-menu') &&
         dy > 95 &&
         Math.abs(dx) < 60
       ) {
@@ -1262,6 +1274,13 @@ const App = {
       </div>
     ` : '';
 
+    const itemId = item.movie_id || item.show_id || item.episode_id || item.video_id;
+    const movieMenuButton = item.media_type === 'movie' ? `
+      <button type="button" class="btn-icon card-action-btn media-card-action-btn" title="More options" aria-label="More options for ${this.escapeHtml(title)}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 2 .9 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+      </button>
+    ` : '';
+
     card.innerHTML = `
       <div class="media-poster-box">
         ${imgUrl ? `<img src="${imgUrl}" loading="lazy" alt="${this.escapeHtml(title)}">` : '<div style="width:100%;height:100%;background:var(--bg-card);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.8rem;">No Image</div>'}
@@ -1270,24 +1289,40 @@ const App = {
         ${progressBar}
       </div>
       <div class="media-card-info">
-        <div class="media-card-title" title="${this.escapeHtml(title)}">${this.escapeHtml(title)}</div>
+        <div class="media-card-heading">
+          <div class="media-card-title" title="${this.escapeHtml(title)}">${this.escapeHtml(title)}</div>
+          ${movieMenuButton}
+        </div>
         <div class="media-card-sub">${subText}</div>
       </div>
     `;
 
     card.addEventListener('click', () => {
+      if (!itemId) return;
       this.savedBrowseScrollY = window.scrollY;
       if (clickRoute) {
         window.location.hash = clickRoute;
       } else if (item.media_type === 'movie') {
-        window.location.hash = `#movie/${encodeURIComponent(item.movie_id)}`;
+        window.location.hash = `#movie/${encodeURIComponent(itemId)}`;
       } else if (item.media_type === 'show') {
-        window.location.hash = `#show/${encodeURIComponent(item.show_id)}`;
+        window.location.hash = `#show/${encodeURIComponent(itemId)}`;
       } else if (item.media_type === 'episode') {
         if (window.Player) Player.blessFromUserGesture();
-        window.location.hash = `#watch/${encodeURIComponent(item.episode_id)}`;
+        window.location.hash = `#watch/${encodeURIComponent(itemId)}`;
       }
     });
+
+    const actionButton = card.querySelector('.card-action-btn');
+    if (actionButton) {
+      actionButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.openPopover(event.currentTarget, {
+          ...item,
+          video_id: itemId,
+          media_type: 'movie',
+        }, card);
+      });
+    }
 
     return card;
   },
@@ -1765,15 +1800,26 @@ const App = {
             <div class="episode-body">
               <div class="episode-header">
                 <div class="episode-title">${this.escapeHtml(ep.title)}</div>
-                <div class="episode-number">E${ep.episode_number}</div>
+                <button type="button" class="btn-icon card-action-btn episode-action-btn" title="More options" aria-label="More options for ${this.escapeHtml(ep.title)}">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 2 .9 2 2 2 .9 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                </button>
               </div>
               ${ep.overview ? `<div class="episode-desc">${this.escapeHtml(ep.overview)}</div>` : ''}
             </div>
           `;
 
           card.addEventListener('click', () => {
-            if (window.Player) Player.blessFromUserGesture();
-            window.location.hash = `#watch/${encodeURIComponent(ep.episode_id)}`;
+          if (window.Player) Player.blessFromUserGesture();
+          window.location.hash = `#watch/${encodeURIComponent(ep.episode_id)}`;
+          });
+
+          card.querySelector('.episode-action-btn').addEventListener('click', (event) => {
+          event.stopPropagation();
+          this.openPopover(event.currentTarget, {
+            ...ep,
+            video_id: ep.episode_id,
+            media_type: 'episode',
+          }, card);
           });
 
           grid.appendChild(card);

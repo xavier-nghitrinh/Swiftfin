@@ -115,17 +115,19 @@ struct MyTubeVideoCard: View {
                         .multilineTextAlignment(.leading)
 
                     HStack(spacing: 6) {
-                        if let ch = video.channelName, !ch.isEmpty {
-                            Text(ch)
+                        if let channelName = video.channelName, !channelName.isEmpty {
+                            Text(channelName)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
 
                         if !video.formattedUploadDate.isEmpty {
-                            Text("•")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            if let channelName = video.channelName, !channelName.isEmpty {
+                                Text("•")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                             Text(video.formattedUploadDate)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)

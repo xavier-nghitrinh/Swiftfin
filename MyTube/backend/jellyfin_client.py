@@ -2,6 +2,7 @@ import logging
 import re
 import requests
 from typing import Dict, Any, List, Optional
+from urllib.parse import urlencode
 from backend.config import (
     JELLYFIN_URL,
     JELLYFIN_API_KEY,
@@ -31,10 +32,29 @@ class JellyfinClient:
         self.shows_library_id = shows_library_id
         self.session = requests.Session()
         self.session.headers.update({
-            "X-Emby-Token": self.api_key,
+            "Authorization": f'MediaBrowser Token="{self.api_key}"',
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
+
+    def get_proxy_url(self, item_id: str, resource: str, params: Optional[Dict[str, Any]] = None) -> str:
+        url = f"/api/jellyfin/{item_id}/{resource}"
+        if params:
+            url += f"?{urlencode(params)}"
+        return url
+
+    def proxy_media_request(self, item_id: str, resource: str, params: Dict[str, str], range_header: Optional[str]):
+        endpoint = "Items" if resource.startswith("Images/") else "Videos"
+        url = f"{self.base_url}/{endpoint}/{item_id}/{resource}"
+        safe_params = {
+            key: value
+            for key, value in params.items()
+            if key.casefold() not in {"api_key", "token", "access_token"}
+        }
+        headers = {"Accept-Encoding": "identity"}
+        if range_header:
+            headers["Range"] = range_header
+        return self.session.get(url, params=safe_params, headers=headers, stream=True, timeout=(10, None))
 
     def get_system_info(self) -> Dict[str, Any]:
         resp = self.session.get(f"{self.base_url}/System/Info", timeout=10)
@@ -117,11 +137,11 @@ class JellyfinClient:
         return resp.json()
 
     def get_stream_url(self, item_id: str, audio_stream_index: Optional[int] = None) -> str:
-        """Return direct stream URL pointing directly to Jellyfin."""
-        url = f"{self.base_url}/Videos/{item_id}/stream.mkv?api_key={self.api_key}&Static=true"
+        """Return a MyTube-proxied direct stream URL."""
+        params = {"Static": "true"}
         if audio_stream_index is not None:
-            url += f"&AudioStreamIndex={audio_stream_index}"
-        return url
+            params["AudioStreamIndex"] = str(audio_stream_index)
+        return self.get_proxy_url(item_id, "stream.mkv", params)
 
     def get_hls_url(
         self,
@@ -137,43 +157,41 @@ class JellyfinClient:
         a_idx = audio_stream_index if audio_stream_index is not None else 1
         video_copy_val = "true" if allow_video_copy else "false"
         max_streaming_bitrate = video_bitrate + 1500000
-        return (
-            f"{self.base_url}/Videos/{item_id}/master.m3u8"
-            f"?api_key={self.api_key}"
-            f"&MediaSourceId={item_id}"
-            f"&DeviceId=mytube_web"
-            f"&PlaySessionId=mytube_{item_id}_a{a_idx}_q{max_height}"
-            f"&VideoCodec=h264"
-            f"&AudioCodec={audio_codec}"
-            f"&AllowVideoStreamCopy={video_copy_val}"
-            f"&AudioStreamIndex={a_idx}"
-            f"&MaxWidth={max_width}"
-            f"&MaxHeight={max_height}"
-            f"&VideoBitRate={video_bitrate}"
-            f"&AudioBitRate=192000"
-            f"&MaxStreamingBitrate={max_streaming_bitrate}"
-            f"&SegmentContainer=mp4"
-        )
+        params = {
+            "MediaSourceId": item_id,
+            "DeviceId": "mytube_web",
+            "PlaySessionId": f"mytube_{item_id}_a{a_idx}_q{max_height}",
+            "VideoCodec": "h264",
+            "AudioCodec": audio_codec,
+            "AllowVideoStreamCopy": video_copy_val,
+            "AudioStreamIndex": str(a_idx),
+            "MaxWidth": str(max_width),
+            "MaxHeight": str(max_height),
+            "VideoBitRate": str(video_bitrate),
+            "AudioBitRate": "192000",
+            "MaxStreamingBitrate": str(max_streaming_bitrate),
+            "SegmentContainer": "mp4",
+        }
+        return self.get_proxy_url(item_id, "master.m3u8", params)
 
     def get_hls_ios_url(self, item_id: str, audio_stream_index: Optional[int] = None) -> str:
         """Return H.264 + AAC HLS master stream URL for iPads/iPhones without hardware AV1 decoding."""
         a_idx = audio_stream_index if audio_stream_index is not None else 1
-        return (
-            f"{self.base_url}/Videos/{item_id}/master.m3u8"
-            f"?api_key={self.api_key}"
-            f"&MediaSourceId={item_id}"
-            f"&DeviceId=mytube_ios"
-            f"&PlaySessionId=mytube_ios_{item_id}_a{a_idx}"
-            f"&VideoCodec=h264"
-            f"&AudioCodec=aac"
-            f"&AudioStreamIndex={a_idx}"
-            f"&MaxWidth=1280"
-            f"&VideoBitRate=2500000"
-            f"&AudioBitRate=128000"
-            f"&MaxStreamingBitrate=3000000"
-            f"&TranscodingMaxAudioChannels=2"
-            f"&SegmentContainer=ts"
-        )
+        params = {
+            "MediaSourceId": item_id,
+            "DeviceId": "mytube_ios",
+            "PlaySessionId": f"mytube_ios_{item_id}_a{a_idx}",
+            "VideoCodec": "h264",
+            "AudioCodec": "aac",
+            "AudioStreamIndex": str(a_idx),
+            "MaxWidth": "1280",
+            "VideoBitRate": "2500000",
+            "AudioBitRate": "128000",
+            "MaxStreamingBitrate": "3000000",
+            "TranscodingMaxAudioChannels": "2",
+            "SegmentContainer": "ts",
+        }
+        return self.get_proxy_url(item_id, "master.m3u8", params)
 
     def stop_active_encodings(self, device_id: str = "mytube_web") -> None:
         """Stop any active ffmpeg remux/transcode sessions on Jellyfin."""
@@ -188,11 +206,11 @@ class JellyfinClient:
 
     def get_subtitle_url(self, item_id: str, subtitle_index: int) -> str:
         """Return WebVTT subtitle URL pointing to Jellyfin."""
-        return f"{self.base_url}/Videos/{item_id}/{item_id}/Subtitles/{subtitle_index}/Stream.vtt?api_key={self.api_key}"
+        return self.get_proxy_url(item_id, f"{item_id}/Subtitles/{subtitle_index}/Stream.vtt")
 
     def get_clean_subtitle_vtt(self, item_id: str, subtitle_index: int) -> str:
         """Fetch WebVTT from Jellyfin and strip YouTube Region tags for clean rendering."""
-        url = self.get_subtitle_url(item_id, subtitle_index)
+        url = f"{self.base_url}/Videos/{item_id}/{item_id}/Subtitles/{subtitle_index}/Stream.vtt"
         resp = self.session.get(url, timeout=30)
         resp.raise_for_status()
         text = resp.content.decode("utf-8-sig", errors="replace")
@@ -209,13 +227,17 @@ class JellyfinClient:
 
     def get_image_url(self, item_id: str, image_type: str = "Primary", fill_width: int = 400, quality: int = 80) -> str:
         """Return image artwork URL pointing to Jellyfin."""
-        return f"{self.base_url}/Items/{item_id}/Images/{image_type}?api_key={self.api_key}&fillWidth={fill_width}&quality={quality}"
+        return self.get_proxy_url(
+            item_id,
+            f"Images/{image_type}",
+            {"fillWidth": str(fill_width), "quality": str(quality)},
+        )
 
     def get_image_bytes(self, item_id: str, image_type: str = "Primary", fill_width: int = 400, quality: int = 80) -> Optional[bytes]:
         """Fetch raw image bytes from Jellyfin."""
-        url = self.get_image_url(item_id, image_type=image_type, fill_width=fill_width, quality=quality)
+        url = f"{self.base_url}/Items/{item_id}/Images/{image_type}"
         try:
-            resp = self.session.get(url, timeout=10)
+            resp = self.session.get(url, params={"fillWidth": fill_width, "quality": quality}, timeout=10)
             if resp.status_code == 200 and resp.content:
                 return resp.content
         except Exception:

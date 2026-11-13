@@ -35,11 +35,6 @@ extension VideoPlayer.PlaybackControls {
         isSpeedBoosting = true
         viewState.originalPlaybackRate = mediaSession.rate
         mediaSession.rate = speed.rawValue
-
-        toaster.present(
-            Text(speed.displayTitle),
-            systemName: "forward.fill"
-        )
     }
 
     func stopSpeedBoost(performJump: Bool = false) {
@@ -50,11 +45,6 @@ extension VideoPlayer.PlaybackControls {
         if isSpeedBoosting {
             if let originalRate = viewState.originalPlaybackRate {
                 mediaSession.rate = originalRate
-
-                toaster.present(
-                    Text(originalRate, format: .playbackRate),
-                    systemName: "forward.fill"
-                )
             }
 
             viewState.originalPlaybackRate = nil
@@ -70,8 +60,6 @@ extension VideoPlayer.PlaybackControls {
     func jumpForward(by interval: Duration? = nil) {
         let interval = interval ?? jumpForwardInterval.rawValue
         guard mediaSession.seek(by: interval) else { return }
-
-        viewState.showProgress()
         viewState.jumpProgressObserver.jumpForward()
 
         toaster.present(
@@ -86,8 +74,6 @@ extension VideoPlayer.PlaybackControls {
     func jumpBackward(by interval: Duration? = nil) {
         let interval = interval ?? jumpBackwardInterval.rawValue
         guard mediaSession.seek(by: .zero - interval) else { return }
-
-        viewState.showProgress()
         viewState.jumpProgressObserver.jumpBackward()
 
         toaster.present(

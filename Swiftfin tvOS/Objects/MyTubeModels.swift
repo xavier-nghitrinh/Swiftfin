@@ -327,7 +327,7 @@ struct MyTubeMovie: Identifiable, Hashable, Codable, Sendable {
         MyTubeVideo(
             videoId: movieId,
             channelId: "movies",
-            channelName: releaseYear.map(String.init) ?? "Movie",
+            channelName: nil,
             title: title,
             descriptionText: overview,
             uploadDate: releaseYear.map(String.init),

@@ -594,7 +594,6 @@ extension VideoPlayer {
 
         #if os(tvOS)
         let onPressEvent = OnPressEvent()
-        private var lastTouchPokeTime: CFTimeInterval = 0
         private var remoteTrackpadPosition: CGPoint = .zero
         private var remoteTrackpadPositionUpdatedAt: CFTimeInterval = 0
         private var trackpadControllerConnectionObserver: NSObjectProtocol?
@@ -1241,23 +1240,6 @@ extension VideoPlayer {
             supplementContainerView.isUserInteractionEnabled = viewState.visibleElements.contains(.supplements)
         }
 
-        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-            super.touchesBegan(touches, with: event)
-
-            guard !(viewState.presentation == .hidden && viewState.isPresentingOverlayActions) else { return }
-
-            let now = CACurrentMediaTime()
-            guard now - lastTouchPokeTime > 1.0 else { return }
-
-            lastTouchPokeTime = now
-
-            if viewState.presentation == .hidden || mediaSession.item.isLiveStream {
-                viewState.showControls()
-            } else {
-                viewState.showProgress()
-            }
-        }
-
         @objc
         private func handleTrackpadSwipe(_ gesture: UISwipeGestureRecognizer) {
             guard gesture.state == .ended,
@@ -1398,19 +1380,15 @@ extension VideoPlayer {
                 return
             }
 
-            if viewState.presentation == .hidden {
-                if mediaSession.playbackRequestStatus == .paused {
-                    mediaSession.setPlaybackRequestStatus(status: .playing)
-                }
+            switch mediaSession.playbackRequestStatus {
+            case .playing:
+                mediaSession.setPlaybackRequestStatus(status: .paused)
+            case .paused:
+                mediaSession.setPlaybackRequestStatus(status: .playing)
+            }
 
+            if viewState.presentation == .hidden {
                 viewState.showControls()
-            } else {
-                switch mediaSession.playbackRequestStatus {
-                case .playing:
-                    mediaSession.setPlaybackRequestStatus(status: .paused)
-                case .paused:
-                    mediaSession.setPlaybackRequestStatus(status: .playing)
-                }
             }
 
             viewState.refreshAutoDismiss()
@@ -1453,7 +1431,6 @@ extension VideoPlayer {
             }
 
             if viewState.presentation == .hidden {
-                viewState.showControls()
                 return
             }
 
