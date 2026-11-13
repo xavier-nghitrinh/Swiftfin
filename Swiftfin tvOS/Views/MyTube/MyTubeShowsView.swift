@@ -253,20 +253,22 @@ struct MyTubeShowDetailView: View {
                             }
 
                             if let seasons = detail?.seasons, seasons.count > 1 {
-                                if seasons.count < 6 {
-                                    Picker("Season", selection: $selectedSeason) {
-                                        ForEach(seasons) { season in
-                                            Text(season.seasonName).tag(season.seasonNumber)
+                                Group {
+                                    if seasons.count < 6 {
+                                        Picker("Season", selection: $selectedSeason) {
+                                            ForEach(seasons) { season in
+                                                Text(season.seasonName).tag(season.seasonNumber)
+                                            }
                                         }
-                                    }
-                                    .pickerStyle(.segmented)
-                                } else {
-                                    Picker("Season", selection: $selectedSeason) {
-                                        ForEach(seasons) { season in
-                                            Text(season.seasonName).tag(season.seasonNumber)
+                                        .pickerStyle(.segmented)
+                                    } else {
+                                        Picker("Season", selection: $selectedSeason) {
+                                            ForEach(seasons) { season in
+                                                Text(season.seasonName).tag(season.seasonNumber)
+                                            }
                                         }
+                                        .pickerStyle(.menu)
                                     }
-                                    .pickerStyle(.menu)
                                 }
                                 .padding(.top, 10)
                             }
