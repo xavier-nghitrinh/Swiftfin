@@ -1,15 +1,7 @@
 name: "Validate PR 🧹"
 
 on:
-  schedule:
-    - cron: '0 0 * * *'
-  pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
-    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read

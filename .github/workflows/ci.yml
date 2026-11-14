@@ -2,22 +2,12 @@ name: "Build 🔨"
 
 on:
   workflow_dispatch:
-
-  schedule:
-    - cron: '0 0 * * *'
   push:
     branches: [ main ]
     paths:
       - '**'
       - '!Translations/*.lproj/**'
       - 'Translations/en.lproj/**'
-  pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
-    branches: [ main ]
 
 permissions:
   contents: read
