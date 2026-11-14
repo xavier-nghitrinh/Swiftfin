@@ -383,8 +383,8 @@ private struct MyTubeSeasonTabs: View {
                                 }
                         }
                         .buttonStyle(.plain)
-                        .focusEffectDisabled()
                         .focused($focusedSeason, equals: season.seasonNumber)
+                        .focusEffectDisabled()
                         .id(season.seasonNumber)
                     }
                 }

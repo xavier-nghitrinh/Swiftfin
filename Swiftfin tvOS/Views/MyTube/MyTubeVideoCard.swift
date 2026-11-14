@@ -45,6 +45,7 @@ struct MyTubeTileButton<Content: View>: View {
         }
         .buttonStyle(.plain)
         .focused($isFocused)
+        .focusEffectDisabled()
     }
 }
 
