@@ -2,17 +2,12 @@ import os
 import sys
 import json
 import csv
-import paramiko
-from collections import defaultdict
+import subprocess
 from pathlib import Path
 
-SSH_HOST = "192.168.1.131"
-SSH_PORT = 8022
-SSH_USER = "u"
-SSH_PASS = "16468878"
-REMOTE_MEDIA_DIR = "/storage/0692F50692F4FACF/yt_video"
+MEDIA_DIR = os.environ.get("MYTUBE_REMOTE_MEDIA_DIR", "/media/devmon/EXTERNAL")
 
-REMOTE_SCRIPT = r"""
+AUDIT_SCRIPT = r"""
 import os
 import sys
 import json
@@ -20,7 +15,7 @@ import glob
 from collections import defaultdict
 from pathlib import Path
 
-root = '/storage/0692F50692F4FACF/yt_video'
+root = __AUDIT_ROOT__
 
 channels = []
 for entry in os.scandir(root):
@@ -169,36 +164,26 @@ print("SAMPLE_MATCHES_END")
 """
 
 def main():
-    print(f"Connecting to {SSH_HOST}:{SSH_PORT}...")
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=10)
-    print("Running audit script remotely...")
-
-    # Write remote script to a temp file and execute
-    sftp = client.open_sftp()
-    remote_script_path = "/data/data/com.termux/files/home/audit_scanner.py"
-    with sftp.file(remote_script_path, "w") as f:
-        f.write(REMOTE_SCRIPT)
-    sftp.close()
-
-    stdin, stdout, stderr = client.exec_command(f"python3 {remote_script_path}")
-    out = stdout.read().decode("utf-8", errors="replace")
-    err = stderr.read().decode("utf-8", errors="replace")
+    print(f"Auditing local media at {MEDIA_DIR}...")
+    script = AUDIT_SCRIPT.replace("__AUDIT_ROOT__", repr(MEDIA_DIR))
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    out = result.stdout
+    err = result.stderr
 
     if err:
         print("Stderr:", err)
-
-    # Clean up remote temp file
-    client.exec_command(f"rm -f {remote_script_path}")
-    client.close()
 
     # Parse output
     if "AUDIT_SUMMARY_START" in out:
         summary_raw = out.split("AUDIT_SUMMARY_START")[1].split("AUDIT_SUMMARY_END")[0].strip()
         summary = json.loads(summary_raw)
         
-        output_dir = Path(r"c:\Users\nhnha\Documents\video-tools\MyTube\scripts")
+        output_dir = Path(__file__).resolve().parent
         report_path = output_dir / "audit_report.json"
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(json.dumps(summary, indent=2, ensure_ascii=False))
@@ -217,7 +202,7 @@ def main():
     if "SAMPLE_MATCHES_START" in out:
         samples_raw = out.split("SAMPLE_MATCHES_START")[1].split("SAMPLE_MATCHES_END")[0].strip()
         samples = json.loads(samples_raw)
-        sample_csv_path = Path(r"c:\Users\nhnha\Documents\video-tools\MyTube\scripts\audit_sample.csv")
+        sample_csv_path = Path(__file__).resolve().parent / "audit_sample.csv"
         with open(sample_csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=["video_id", "channel", "title", "upload_date", "video_path", "json_path"])
             writer.writeheader()

@@ -2,7 +2,7 @@ import logging
 import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List
-from backend.config import TRASH_RETENTION_DAYS, SSH_HOST, SSH_PORT, SSH_USER, SSH_PASS
+from backend.config import TRASH_RETENTION_DAYS
 from backend.database import get_db, now_iso, find_media_item
 from backend.jellyfin_client import jellyfin
 import os
@@ -54,7 +54,7 @@ class CleanupService:
 
     @staticmethod
     def delete_permanently(video_id: str) -> Dict[str, Any]:
-        """Permanently delete file on SSD via Jellyfin deletion API & clean sidecars."""
+        """Delete an item through Jellyfin and remove any local sidecar files."""
         with get_db() as conn:
             cursor = conn.cursor()
             media, media_type = find_media_item(cursor, video_id)
@@ -76,25 +76,13 @@ class CleanupService:
         # 2. Clean up sidecar files (.info.json, .nfo, .jpg)
         if file_path:
             base_path = os.path.splitext(file_path)[0]
-            if os.path.exists(file_path) or os.path.exists(f"{base_path}.info.json"):
-                for ext in (".info.json", ".nfo", ".jpg", ".webp"):
-                    p = f"{base_path}{ext}"
-                    try:
-                        if os.path.exists(p):
-                            os.remove(p)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete local sidecar {p}: {e}")
-            else:
+            for ext in (".info.json", ".nfo", ".jpg", ".webp"):
+                p = f"{base_path}{ext}"
                 try:
-                    import paramiko
-                    client = paramiko.SSHClient()
-                    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=5)
-                    del_cmd = f"rm -f '{base_path}.info.json' '{base_path}.nfo' '{base_path}.jpg' '{base_path}.webp'"
-                    client.exec_command(del_cmd)
-                    client.close()
+                    if os.path.exists(p):
+                        os.remove(p)
                 except Exception as e:
-                    logger.warning(f"Failed to delete sidecars over SSH: {e}")
+                    logger.warning(f"Failed to delete local sidecar {p}: {e}")
 
         # 3. Mark as deleted in SQLite
         now = now_iso()

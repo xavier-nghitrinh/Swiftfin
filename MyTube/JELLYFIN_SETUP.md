@@ -54,11 +54,11 @@ MyTube stores Jellyfin **item IDs** in SQLite for individual videos, movies, sho
 
 ## IDs found on the current server
 
-The configured server currently reports user `xavier` and these libraries:
+The configured server currently reports user `Xavier` and these libraries:
 
 | User/library | ID |
 |---|---|
-| User `xavier` | `0b9269f3641e42f090749ae1f2a97d85` |
+| User `Xavier` | `05e68dd11ab249ca96eb3bd4844de2c5` |
 | YouTube (`homevideos`) | `34f331a89ce405e2b877d68d5ee4d4a2` |
 | Movies (`movies`) | `f137a2dd21bbc1b99aa5c0f6bf02a805` |
 | Shows (`tvshows`) | `a656b907eb3a73532e40e44b968d0225` |

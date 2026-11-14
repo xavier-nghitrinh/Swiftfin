@@ -3,60 +3,13 @@ import logging
 import re
 import json
 import os
-try:
-    import paramiko
-except ImportError:
-    paramiko = None
 from typing import Dict, Any, List, Tuple
 
-from backend.config import (
-    SSH_HOST,
-    SSH_PORT,
-    SSH_USER,
-    SSH_PASS,
-    REMOTE_MEDIA_DIR,
-)
+from backend.config import REMOTE_MEDIA_DIR
 from backend.database import get_db, now_iso
 from backend.jellyfin_client import jellyfin
 
 logger = logging.getLogger("mytube.scanner")
-
-REMOTE_SCANNER_CODE = r"""
-import os, json
-
-root = '/storage/0692F50692F4FACF/yt_video'
-results = {}
-
-for dirpath, _, filenames in os.walk(root):
-    for f in filenames:
-        if f.endswith('.info.json'):
-            json_path = os.path.join(dirpath, f)
-            video_name = f[:-10]
-            video_mkv = os.path.join(dirpath, video_name + '.mkv')
-            thumb_jpg = os.path.join(dirpath, video_name + '-thumb.jpg')
-            has_thumb = os.path.isfile(thumb_jpg)
-            try:
-                with open(json_path, 'r', encoding='utf-8') as jf:
-                    data = json.load(jf)
-                    results[video_mkv] = {
-                        'video_id': data.get('id'),
-                        'channel': data.get('channel'),
-                        'channel_id': data.get('channel_id'),
-                        'title': data.get('title'),
-                        'upload_date': data.get('upload_date'),
-                        'duration': data.get('duration'),
-                        'description': data.get('description'),
-                        'format': data.get('format'),
-                        'language': data.get('language'),
-                        'thumb_path': thumb_jpg if has_thumb else None
-                    }
-            except Exception:
-                pass
-
-print('SCAN_DATA_START')
-print(json.dumps(results, ensure_ascii=False))
-print('SCAN_DATA_END')
-"""
 
 def parse_audio_labels_from_meta(format_str: str, lang_str: str) -> List[str]:
     """Extract human-readable audio track labels from yt-dlp format & language strings."""
@@ -73,69 +26,45 @@ def parse_audio_labels_from_meta(format_str: str, lang_str: str) -> List[str]:
     return labels
 
 def fetch_remote_metadata_cache() -> Dict[str, Dict[str, Any]]:
-    """Extract yt-dlp metadata from all .info.json files (locally if on server, or over SSH)."""
-    # 1. Direct local scan if running on server where REMOTE_MEDIA_DIR exists
-    if os.path.isdir(REMOTE_MEDIA_DIR):
-        try:
-            results = {}
-            for dirpath, _, filenames in os.walk(REMOTE_MEDIA_DIR):
-                for f in filenames:
-                    if f.endswith('.info.json'):
-                        json_path = os.path.join(dirpath, f)
-                        video_name = f[:-10]
-                        video_mkv = os.path.join(dirpath, video_name + '.mkv')
-                        thumb_jpg = os.path.join(dirpath, video_name + '-thumb.jpg')
-                        has_thumb = os.path.isfile(thumb_jpg)
-                        try:
-                            with open(json_path, 'r', encoding='utf-8') as jf:
-                                data = json.load(jf)
-                                results[video_mkv] = {
-                                    'video_id': data.get('id'),
-                                    'channel': data.get('channel'),
-                                    'channel_id': data.get('channel_id'),
-                                    'title': data.get('title'),
-                                    'upload_date': data.get('upload_date'),
-                                    'duration': data.get('duration'),
-                                    'description': data.get('description'),
-                                    'format': data.get('format'),
-                                    'language': data.get('language'),
-                                    'thumb_path': thumb_jpg if has_thumb else None
-                                }
-                        except Exception:
-                            pass
-            logger.info(f"Loaded {len(results)} metadata records directly from local SSD.")
-            return results
-        except Exception as e:
-            logger.warning(f"Local metadata scan error: {e}")
+    """Extract yt-dlp metadata from local .info.json files."""
+    if not os.path.isdir(REMOTE_MEDIA_DIR):
+        logger.warning("Media directory is unavailable locally: %s", REMOTE_MEDIA_DIR)
+        return {}
 
-    # 2. Remote SSH scan fallback (e.g. when developing on Windows PC)
-    if paramiko:
-        try:
-            client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=8)
-            
-            sftp = client.open_sftp()
-            temp_path = "/data/data/com.termux/files/home/mytube_scanner_worker.py"
-            with sftp.file(temp_path, "w") as f:
-                f.write(REMOTE_SCANNER_CODE)
-            sftp.close()
-            
-            stdin, stdout, stderr = client.exec_command(f"python3 {temp_path}")
-            out = stdout.read().decode("utf-8", errors="replace")
-            client.exec_command(f"rm -f {temp_path}")
-            client.close()
-            
-            if "SCAN_DATA_START" in out:
-                raw = out.split("SCAN_DATA_START")[1].split("SCAN_DATA_END")[0].strip()
-                cache = json.loads(raw)
-                logger.info(f"Loaded {len(cache)} metadata records directly from SSD via SSH.")
-                return cache
-        except Exception as e:
-            logger.warning(f"Could not fetch metadata cache via SSH ({e}). Falling back to Jellyfin data only.")
-    return {}
+    try:
+        results = {}
+        for dirpath, _, filenames in os.walk(REMOTE_MEDIA_DIR):
+            for f in filenames:
+                if f.endswith('.info.json'):
+                    json_path = os.path.join(dirpath, f)
+                    video_name = f[:-10]
+                    video_mkv = os.path.join(dirpath, video_name + '.mkv')
+                    thumb_jpg = os.path.join(dirpath, video_name + '-thumb.jpg')
+                    has_thumb = os.path.isfile(thumb_jpg)
+                    try:
+                        with open(json_path, 'r', encoding='utf-8') as jf:
+                            data = json.load(jf)
+                            results[video_mkv] = {
+                                'video_id': data.get('id'),
+                                'channel': data.get('channel'),
+                                'channel_id': data.get('channel_id'),
+                                'title': data.get('title'),
+                                'upload_date': data.get('upload_date'),
+                                'duration': data.get('duration'),
+                                'description': data.get('description'),
+                                'format': data.get('format'),
+                                'language': data.get('language'),
+                                'thumb_path': thumb_jpg if has_thumb else None
+                            }
+                    except Exception:
+                        pass
+        logger.info("Loaded %d metadata records from local storage.", len(results))
+        return results
+    except Exception as e:
+        logger.warning("Local metadata scan error: %s", e)
+        return {}
 
-def load_single_info_json(file_path: str, sftp=None) -> Dict[str, Any]:
+def load_single_info_json(file_path: str) -> Dict[str, Any]:
     """Load metadata for a single video file from its corresponding .info.json file."""
     if not file_path:
         return {}
@@ -143,7 +72,6 @@ def load_single_info_json(file_path: str, sftp=None) -> Dict[str, Any]:
     json_path = base_path + ".info.json"
     thumb_path = base_path + "-thumb.jpg"
 
-    # 1. Local direct read (on server or when path exists locally)
     if os.path.isfile(json_path):
         try:
             with open(json_path, "r", encoding="utf-8") as jf:
@@ -163,36 +91,10 @@ def load_single_info_json(file_path: str, sftp=None) -> Dict[str, Any]:
         except Exception as e:
             logger.debug(f"Failed to read local info.json at {json_path}: {e}")
 
-    # 2. SFTP read fallback (when running on PC against remote Termux server)
-    if sftp:
-        try:
-            with sftp.open(json_path, "r") as rf:
-                data = json.load(rf)
-                has_thumb = False
-                try:
-                    sftp.stat(thumb_path)
-                    has_thumb = True
-                except Exception:
-                    pass
-                return {
-                    "video_id": data.get("id"),
-                    "channel": data.get("channel"),
-                    "channel_id": data.get("channel_id"),
-                    "title": data.get("title"),
-                    "upload_date": data.get("upload_date"),
-                    "duration": data.get("duration"),
-                    "description": data.get("description"),
-                    "format": data.get("format"),
-                    "language": data.get("language"),
-                    "thumb_path": thumb_path if has_thumb else None,
-                }
-        except Exception as e:
-            logger.debug(f"Failed to read remote info.json via SFTP at {json_path}: {e}")
-
     return {}
 
 def extract_channel_folder_from_path(file_path: str) -> str:
-    """Path format: /storage/0692F50692F4FACF/yt_video/Channel_Name/Season 2026/video.mkv"""
+    """Get the channel folder from a path under the yt_video library."""
     if "yt_video/" in file_path:
         sub = file_path.split("yt_video/")[1]
         parts = sub.split("/")
@@ -208,19 +110,6 @@ def sync_missing_thumbnails_to_sqlite(
     if not video_thumb_tasks and not channel_thumb_tasks:
         return 0
 
-    is_local = os.path.isdir(REMOTE_MEDIA_DIR)
-    sftp = None
-    ssh_client = None
-
-    if not is_local and paramiko:
-        try:
-            ssh_client = paramiko.SSHClient()
-            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh_client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=8)
-            sftp = ssh_client.open_sftp()
-        except Exception as e:
-            logger.warning(f"SFTP connection for thumbnails unavailable ({e}), using Jellyfin fallback.")
-
     cached = 0
     with get_db() as conn:
         cursor = conn.cursor()
@@ -228,19 +117,12 @@ def sync_missing_thumbnails_to_sqlite(
         # 1. Channel Posters -> Base64 in channels.thumbnail_url
         for channel_id, remote_poster in channel_thumb_tasks:
             raw_bytes = None
-            if remote_poster:
-                if is_local and os.path.isfile(remote_poster):
-                    try:
-                        with open(remote_poster, "rb") as f:
-                            raw_bytes = f.read()
-                    except Exception:
-                        pass
-                elif sftp:
-                    try:
-                        with sftp.open(remote_poster, "rb") as rf:
-                            raw_bytes = rf.read()
-                    except Exception:
-                        pass
+            if remote_poster and os.path.isfile(remote_poster):
+                try:
+                    with open(remote_poster, "rb") as f:
+                        raw_bytes = f.read()
+                except Exception:
+                    pass
             if raw_bytes:
                 b64 = "data:image/jpeg;base64," + base64.b64encode(raw_bytes).decode("ascii")
                 cursor.execute("UPDATE channels SET thumbnail_url = ? WHERE channel_id = ?", (b64, channel_id))
@@ -249,19 +131,12 @@ def sync_missing_thumbnails_to_sqlite(
         # 2. Video Thumbnails -> Base64 in videos.thumbnail_url
         for video_id, remote_thumb, jf_item_id in video_thumb_tasks:
             raw_bytes = None
-            if remote_thumb:
-                if is_local and os.path.isfile(remote_thumb):
-                    try:
-                        with open(remote_thumb, "rb") as f:
-                            raw_bytes = f.read()
-                    except Exception:
-                        pass
-                elif sftp:
-                    try:
-                        with sftp.open(remote_thumb, "rb") as rf:
-                            raw_bytes = rf.read()
-                    except Exception:
-                        pass
+            if remote_thumb and os.path.isfile(remote_thumb):
+                try:
+                    with open(remote_thumb, "rb") as f:
+                        raw_bytes = f.read()
+                except Exception:
+                    pass
             if not raw_bytes and jf_item_id:
                 try:
                     url = f"{jellyfin.base_url}/Items/{jf_item_id}/Images/Thumb?fillWidth=640&quality=85"
@@ -277,17 +152,6 @@ def sync_missing_thumbnails_to_sqlite(
 
         conn.commit()
 
-    if sftp:
-        try:
-            sftp.close()
-        except Exception:
-            pass
-    if ssh_client:
-        try:
-            ssh_client.close()
-        except Exception:
-            pass
-
     if cached > 0:
         logger.info(f"Stored {cached} thumbnails as Base64 directly in SQLite.")
     return cached
@@ -298,19 +162,6 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
     jellyfin_items = jellyfin.get_library_items()
     logger.info(f"Fetched {len(jellyfin_items)} items from Jellyfin.")
     
-    # SFTP client fallback for remote PC development if needed
-    is_local = os.path.isdir(REMOTE_MEDIA_DIR)
-    sftp = None
-    ssh_client = None
-    if not is_local and paramiko:
-        try:
-            ssh_client = paramiko.SSHClient()
-            ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh_client.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASS, timeout=8)
-            sftp = ssh_client.open_sftp()
-        except Exception as e:
-            logger.debug(f"SSH client not available: {e}")
-
     # If force_full is explicitly requested, load full cache
     metadata_cache = {}
     if force_full:
@@ -412,7 +263,7 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
 
             else:
                 # SLOW PATH: New video (or force_full) -> Load metadata for this item only
-                meta = metadata_cache.get(file_path) if force_full else load_single_info_json(file_path, sftp=sftp)
+                meta = metadata_cache.get(file_path) if force_full else load_single_info_json(file_path)
                 if not meta:
                     meta = {}
 
@@ -537,17 +388,6 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
                         channel_thumb_tasks.append((channel_id, remote_channel_poster))
 
         conn.commit()
-
-    if sftp:
-        try:
-            sftp.close()
-        except Exception:
-            pass
-    if ssh_client:
-        try:
-            ssh_client.close()
-        except Exception:
-            pass
 
     cached_thumbs = sync_missing_thumbnails_to_sqlite(video_thumb_tasks, channel_thumb_tasks)
         

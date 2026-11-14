@@ -1,0 +1,8 @@
+.runtime/
+history/
+media/
+.venv/
+__pycache__/
+*.py[cod]
+www.youtube.com_cookies.txt
+jellyfin.json

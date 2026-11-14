@@ -5,9 +5,9 @@ MyTube is a lightweight, self-hosted YouTube system that turns downloaded videos
 ## Architecture
 
 - **Backend:** FastAPI (Python 3.13) + SQLite. Runs locally on Windows PC (`http://localhost:8000`).
-- **Database:** `I:\mytube.db` on Windows when `I:\` is available; otherwise `data\mytube.db`. Android uses its configured external-storage root. Override with `MYTUBE_DB_PATH` or `MYTUBE_STORAGE_ROOT`.
+- **Database:** `I:\mytube.db` on Windows when `I:\` is available; `/media/devmon/EXTERNAL/mytube.db` on Linux when the mount is available; otherwise `data\mytube.db`. Android uses its configured external-storage root. Override with `MYTUBE_DB_PATH` or `MYTUBE_STORAGE_ROOT`.
 - **Media Engine:** Jellyfin server at `http://192.168.1.131:8096`.
-- **Storage:** External SSD mounted on Android (`/storage/0692F50692F4FACF/yt_video`), synced via SSH + Jellyfin API.
+- **Storage:** Local media directory (`/media/devmon/EXTERNAL/yt_video` by default), accessed directly by MyTube and Jellyfin API.
 - **Client:** Modern Progressive Web App (PWA) compatible with Desktop Chrome/Edge/Firefox, Android phones/tablets, and iPhone/iPad.
 
 For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_SETUP.md](./JELLYFIN_SETUP.md).
@@ -43,6 +43,17 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
 ---
 
 ## How to Run
+
+### Linux Server
+Copy the `MyTube` folder into your Linux user's home directory, make sure `/media/devmon/EXTERNAL` is mounted and writable by that user, then run:
+```bash
+cd ~/MyTube
+bash setup_linux.sh
+```
+
+The script creates a virtual environment, installs the requirements, prompts for Jellyfin and storage settings, and installs/enables a systemd service running as your user. It stores service settings in `~/.config/mytube/mytube.env` with owner-only permissions. Leave the API-key prompt blank to use the value configured in `backend/config.py`.
+
+Use `sudo systemctl status mytube` to check the service and `sudo journalctl -u mytube -f` to view its logs. The service listens on port `8000` by default; configure your firewall separately if clients need LAN access.
 
 ### 1. Launch MyTube Server
 Double-click `start_mytube.bat` or run:

@@ -1,0 +1,34 @@
+configuration:
+  working_directory: .runtime/working
+  lock_directory: .runtime/locks
+  persist_logs:
+    keep_successful_logs: true
+    logs_directory: .runtime/logs
+
+presets:
+  YouTube Video Base:
+    preset:
+      - Jellyfin TV Show by Date
+      - Max 1080p
+    ytdl_options:
+      sleep_interval: 10
+      max_sleep_interval: 20
+      break_on_existing: false
+      retries: 10
+      socket_timeout: 30
+      merge_output_format: mkv
+      remuxvideo: mkv
+    format: >-
+      bv*[height<=1080]+ba/b[height<=1080]
+    output_options:
+      maintain_download_archive: true
+
+  YouTube Audio Base:
+    preset:
+      - Single
+      - Max Audio Quality
+    audio_extract:
+      codec: m4a
+      quality: 0
+    output_options:
+      maintain_download_archive: true

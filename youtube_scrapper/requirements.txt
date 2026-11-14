@@ -1,0 +1,3 @@
+PyYAML>=6.0
+ytdl-sub>=2026.8.26.post1
+curl-cffi>=0.7,<=0.16.5
