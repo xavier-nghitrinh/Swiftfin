@@ -120,6 +120,7 @@ struct MyTubeChannelsView: View {
                     }
                 }
                 .padding(.horizontal, 50)
+                .focusEffectDisabled()
             }
             .padding(.bottom, 60)
         }
@@ -281,6 +282,7 @@ struct MyTubeChannelDetailView: View {
                         }
                     }
                     .padding(.horizontal, 50)
+                    .focusEffectDisabled()
                 }
             }
             .padding(.bottom, 60)

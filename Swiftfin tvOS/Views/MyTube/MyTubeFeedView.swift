@@ -219,6 +219,7 @@ struct MyTubeFeedView: View {
                     }
                 }
                 .padding(.horizontal, 50)
+                .focusEffectDisabled()
 
                 if isLoading {
                     HStack {

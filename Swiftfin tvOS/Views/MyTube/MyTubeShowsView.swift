@@ -92,6 +92,7 @@ struct MyTubeShowsView: View {
                                 .padding(.horizontal, 50)
                                 .padding(.vertical, 30)
                             }
+                            .focusEffectDisabled()
                         }
                     }
 
@@ -173,6 +174,7 @@ private struct ShowShelfView: View {
                 .padding(.horizontal, 50)
                 .padding(.vertical, 10)
             }
+            .focusEffectDisabled()
         }
     }
 }
@@ -328,6 +330,7 @@ struct MyTubeShowDetailView: View {
                                 }
                             }
                             .padding(.horizontal, 50)
+                            .focusEffectDisabled()
                         }
                     }
                 }
@@ -389,9 +392,11 @@ private struct MyTubeSeasonTabs: View {
                     }
                 }
                 .padding(.horizontal, 50)
+                .focusEffectDisabled()
                 .padding(.vertical, 12)
             }
             .focusSection()
+            .focusEffectDisabled()
             .onAppear {
                 proxy.scrollTo(selection, anchor: .center)
             }

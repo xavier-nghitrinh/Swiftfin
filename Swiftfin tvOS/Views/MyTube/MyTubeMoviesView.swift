@@ -151,6 +151,7 @@ private struct MovieShelfView: View {
                 .padding(.horizontal, 50)
                 .padding(.vertical, 30)
             }
+            .focusEffectDisabled()
         }
     }
 }

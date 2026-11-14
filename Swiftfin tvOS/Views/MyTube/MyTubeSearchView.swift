@@ -73,6 +73,7 @@ struct MyTubeSearchView: View {
                         }
                     }
                     .padding(.horizontal, 50)
+                    .focusEffectDisabled()
                 }
             }
             .padding(.bottom, 60)
