@@ -56,6 +56,28 @@ The script creates a virtual environment, installs the requirements, prompts for
 
 Use `sudo systemctl status mytube` to check the service and `sudo journalctl -u mytube -f` to view its logs. The service listens on port `8000` by default; configure your firewall separately if clients need LAN access.
 
+### Deploying changes to the kpserver MyTube instance
+
+The production MyTube instance is on `192.168.1.108:11226`:
+
+- SSH account: `xavie`
+- SSH identity on the Windows development machine: `%USERPROFILE%\.ssh\kpserver-mytube`
+- Application directory: `/home/devmon/MyTube`
+- systemd service: `mytube.service` (runs as `devmon`, listens on port `8000`)
+- Local verification URL: `http://192.168.1.108:8000`
+
+Never put SSH passwords, private keys, Jellyfin API keys, or other credentials in this README or in source control. Use the existing SSH key; do not enable password-based automation. The server's `xavie` account cannot write into `/home/devmon/MyTube`, and `sudo` may prompt for the account password. Do not assume passwordless sudo is configured: inspect access at the start of each deployment. A temporary deployment helper from a previous session may have been removed.
+
+For a future code change, the developer/assistant should:
+
+1. Make and review the change locally, run the focused tests and syntax/build checks, and identify the exact runtime files that need deployment.
+2. With the SSH key, verify the host and service, then stage only those changed files under `/home/xavie/mytube-audio-only-deploy`, preserving their paths relative to `MyTube` (for example, `backend/main.py` and `frontend/js/player.js`). Do not copy secrets, databases, virtual environments, caches, or the whole repository.
+3. If `xavie` cannot install the staged files, ask the server owner to authorize a **temporary, narrowly scoped** root helper. The helper should install only the listed staged files into `/home/devmon/MyTube`, assign ownership to `devmon:devmon`, use normal non-executable file permissions, and restart `mytube.service`. Permit only that helper in a temporary `/etc/sudoers.d/` rule; validate the rule with `visudo` before using it. Never grant passwordless general-purpose shell, `cp`, `install`, or `systemctl` access.
+4. Run the authorized helper, check `systemctl is-active mytube`, and verify the site/API plus the feature that changed. Check logs if the service fails to restart. Report whether deployment and verification succeeded.
+5. Remove the staged copies and the temporary sudoers rule and helper, then verify the service is still active and the temporary access is gone. If elevated cleanup requires the owner, give them the exact cleanup commands instead of leaving temporary access in place.
+
+The helper is deliberately created for each deployment from the actual changed-file list; do not treat a helper left by an earlier deployment as trusted or reusable without inspecting it. If SSH key access is unavailable, stop and ask the owner to restore access rather than requesting or recording a password.
+
 ### 1. Launch MyTube Server
 Double-click `start_mytube.bat` or run:
 ```powershell
