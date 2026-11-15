@@ -108,6 +108,10 @@ class PlaybackService:
             active_quality = quality
             use_hls = True
             q_cfg = quality_map[quality]
+        elif quality == "audio_only" and audio_tracks:
+            active_quality = "audio_only"
+            use_hls = False
+            q_cfg = quality_map["1080p"]
         else:
             active_quality = "auto"
             q_cfg = quality_map["1080p"]
@@ -119,14 +123,29 @@ class PlaybackService:
             {"id": "1080p", "label": "1080p (10 Mbps)", "is_active": active_quality == "1080p"},
             {"id": "720p", "label": "720p (4 Mbps)", "is_active": active_quality == "720p"},
             {"id": "480p", "label": "480p (1.5 Mbps)", "is_active": active_quality == "480p"},
-            {"id": "direct", "label": "Original / Direct", "is_active": active_quality == "direct"},
         ]
+        if audio_tracks:
+            available_qualities.append({
+                "id": "audio_only",
+                "label": "Audio only",
+                "is_active": active_quality == "audio_only",
+            })
+        available_qualities.append({
+            "id": "direct",
+            "label": "Original / Direct",
+            "is_active": active_quality == "direct",
+        })
 
         # Clean up any previous active ffmpeg encoding sessions before starting a new stream
         jellyfin.stop_active_encodings("mytube_web")
         jellyfin.stop_active_encodings("mytube_ios")
 
         stream_url = jellyfin.get_stream_url(item_id, audio_stream_index=target_audio_index)
+        audio_only_url = (
+            jellyfin.get_audio_only_url(item_id, target_audio_index)
+            if active_quality == "audio_only"
+            else None
+        )
         hls_url = jellyfin.get_hls_url(
             item_id,
             audio_stream_index=target_audio_index,
@@ -174,6 +193,7 @@ class PlaybackService:
             "watched": bool(media["watched"]),
             "thumbnail_url": thumb,
             "stream_url": stream_url,
+            "audio_only_url": audio_only_url,
             "hls_url": hls_url,
             "hls_ios_url": hls_ios_url,
             "use_hls": use_hls,

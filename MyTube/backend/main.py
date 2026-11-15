@@ -96,7 +96,7 @@ def get_playback_info(
 def proxy_jellyfin_media(item_id: str, resource: str, request: Request):
     """Proxy browser media requests so Jellyfin credentials stay server-side."""
     allowed_resource = (
-        resource in {"stream.mkv", "master.m3u8", "main.m3u8"}
+        resource in {"audio", "stream.mkv", "master.m3u8", "main.m3u8"}
         or re.fullmatch(r"hls\d+/[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", resource) is not None
         or re.fullmatch(r"Images/(?:Primary|Backdrop/\d+)", resource) is not None
         or re.fullmatch(r"(?:[0-9a-f]{32}/)?Subtitles/\d+/Stream\.vtt", resource) is not None

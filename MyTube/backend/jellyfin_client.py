@@ -44,8 +44,11 @@ class JellyfinClient:
         return url
 
     def proxy_media_request(self, item_id: str, resource: str, params: Dict[str, str], range_header: Optional[str]):
-        endpoint = "Items" if resource.startswith("Images/") else "Videos"
-        url = f"{self.base_url}/{endpoint}/{item_id}/{resource}"
+        if resource == "audio":
+            url = f"{self.base_url}/Audio/{item_id}/stream"
+        else:
+            endpoint = "Items" if resource.startswith("Images/") else "Videos"
+            url = f"{self.base_url}/{endpoint}/{item_id}/{resource}"
         safe_params = {
             key: value
             for key, value in params.items()
@@ -142,6 +145,19 @@ class JellyfinClient:
         if audio_stream_index is not None:
             params["AudioStreamIndex"] = str(audio_stream_index)
         return self.get_proxy_url(item_id, "stream.mkv", params)
+
+    def get_audio_only_url(self, item_id: str, audio_stream_index: int) -> str:
+        """Return a Jellyfin-transcoded MP3 stream containing only the selected audio track."""
+        params = {
+            "DeviceId": "mytube_web",
+            "PlaySessionId": f"mytube_{item_id}_a{audio_stream_index}_audio",
+            "AudioCodec": "mp3",
+            "AudioStreamIndex": str(audio_stream_index),
+            "AudioBitRate": "192000",
+            "AudioChannels": "2",
+            "Container": "mp3",
+        }
+        return self.get_proxy_url(item_id, "audio", params)
 
     def get_hls_url(
         self,

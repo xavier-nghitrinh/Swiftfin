@@ -49,6 +49,9 @@ const Player = {
   currentVideo: null,
   playbackData: null,
   selectedAudioIndex: null,
+  audioOnlyStartTime: 0,
+  audioOnlyRequestId: 0,
+  seekPreviewTime: null,
   selectedSubIndex: -1,
   currentSubMeta: null,
   subtitleCues: [],
@@ -230,12 +233,21 @@ const Player = {
 
     this.seekbar.addEventListener('input', (e) => {
       e.stopPropagation();
-      const dur = this.video.duration || (this.playbackData?.duration || 0);
+      const dur = this.getDuration();
       const targetTime = (parseFloat(this.seekbar.value) / 100) * dur;
-      if (!isNaN(targetTime)) {
-        this.video.currentTime = targetTime;
+      if (Number.isFinite(targetTime)) {
+        if (this.currentQuality === 'audio_only') {
+          this.previewSeek(targetTime);
+        } else {
+          this.seekTo(targetTime);
+        }
       }
       this.showOverlay();
+    });
+    this.seekbar.addEventListener('change', () => {
+      if (this.currentQuality !== 'audio_only') return;
+      const targetTime = (parseFloat(this.seekbar.value) / 100) * this.getDuration();
+      this.seekTo(targetTime);
     });
 
     this.setupRotatedSeekbar();
@@ -355,10 +367,9 @@ const Player = {
 
         const step = 10;
         if (zone === 'left') {
-          this.video.currentTime = Math.max(0, this.video.currentTime - step);
+          this.seekTo(this.getCurrentTime() - step);
         } else {
-          const dur = this.video.duration || (this.playbackData?.duration || 0);
-          this.video.currentTime = Math.min(dur, this.video.currentTime + step);
+          this.seekTo(this.getCurrentTime() + step);
         }
         this.onTimeUpdate();
 
@@ -440,12 +451,11 @@ const Player = {
         togglePlay();
       } else if (e.key === 'ArrowLeft' || e.key === 'j') {
         e.preventDefault();
-        this.video.currentTime = Math.max(0, this.video.currentTime - 10);
+        this.seekTo(this.getCurrentTime() - 10);
         this.showOverlay();
       } else if (e.key === 'ArrowRight' || e.key === 'l') {
         e.preventDefault();
-        const dur = this.video.duration || (this.playbackData?.duration || 0);
-        this.video.currentTime = Math.min(dur, this.video.currentTime + 10);
+        this.seekTo(this.getCurrentTime() + 10);
         this.showOverlay();
       } else if (e.key === 'f') {
         e.preventDefault();
@@ -466,9 +476,14 @@ const Player = {
       if (!rect.height) return;
       const ratio = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
       this.seekbar.value = (ratio * 100).toFixed(2);
-      const dur = this.video.duration || (this.playbackData?.duration || 0);
+      const dur = this.getDuration();
       if (dur > 0) {
-        this.video.currentTime = ratio * dur;
+        const targetTime = ratio * dur;
+        if (this.currentQuality === 'audio_only') {
+          this.previewSeek(targetTime);
+        } else {
+          this.seekTo(targetTime);
+        }
       }
       this.showOverlay();
     };
@@ -492,6 +507,9 @@ const Player = {
     const stopScrub = (e) => {
       if (!scrubbing) return;
       scrubbing = false;
+      if (this.currentQuality === 'audio_only') {
+        this.seekTo((parseFloat(this.seekbar.value) / 100) * this.getDuration());
+      }
       if (e && e.pointerId !== undefined && this.seekbarContainer.releasePointerCapture) {
         try { this.seekbarContainer.releasePointerCapture(e.pointerId); } catch (err) {}
       }
@@ -676,10 +694,95 @@ const Player = {
     }
   },
 
+  getDuration() {
+    if (this.currentQuality === 'audio_only') {
+      const audioDuration = Number(this.playbackData?.duration ?? this.currentVideo?.duration ?? 0);
+      return Number.isFinite(audioDuration) && audioDuration > 0 ? audioDuration : 0;
+    }
+
+    const nativeDuration = this.video?.duration;
+    if (Number.isFinite(nativeDuration) && nativeDuration > 0) return nativeDuration;
+
+    const fallbackDuration = Number(this.playbackData?.duration ?? this.currentVideo?.duration ?? 0);
+    return Number.isFinite(fallbackDuration) && fallbackDuration > 0 ? fallbackDuration : 0;
+  },
+
+  getCurrentTime() {
+    const nativeTime = Number(this.video?.currentTime);
+    const currentTime = Number.isFinite(nativeTime) && nativeTime > 0 ? nativeTime : 0;
+    if (this.currentQuality !== 'audio_only') return currentTime;
+    const audioTime = this.audioOnlyStartTime + currentTime;
+    const duration = this.getDuration();
+    return duration > 0 ? Math.min(audioTime, duration) : audioTime;
+  },
+
+  previewSeek(time) {
+    const duration = this.getDuration();
+    if (duration <= 0 || !Number.isFinite(time)) return;
+    const targetTime = Math.max(0, Math.min(time, duration));
+    this.seekPreviewTime = targetTime;
+    this.seekbar.value = (targetTime / duration) * 100;
+    this.timeDisplay.textContent = `${this.formatTime(targetTime)} / ${this.formatTime(duration)}`;
+  },
+
+  seekTo(time) {
+    if (!Number.isFinite(time)) return;
+    this.seekPreviewTime = null;
+    const duration = this.getDuration();
+    const targetTime = Math.max(0, duration > 0 ? Math.min(time, duration) : time);
+
+    if (this.currentQuality === 'audio_only' && this.playbackData?.audio_only_url) {
+      const wasPlaying = !this.video.paused;
+      this.loadAudioOnlySource(this.playbackData, targetTime, wasPlaying);
+      this.onTimeUpdate();
+      return;
+    }
+
+    this.video.currentTime = targetTime;
+  },
+
+  loadAudioOnlySource(data, startTime, autoPlay) {
+    const duration = this.getDuration();
+    const targetTime = Math.max(0, duration > 0 ? Math.min(startTime, duration) : startTime);
+    const source = new URL(data.audio_only_url, window.location.href);
+    const startTimeTicks = Math.round(targetTime * 10_000_000);
+    const playSessionId = source.searchParams.get('PlaySessionId') || 'mytube_audio';
+
+    this.audioOnlyStartTime = targetTime;
+    this.seekPreviewTime = null;
+    this.audioOnlyRequestId += 1;
+    source.searchParams.set(
+      'PlaySessionId',
+      `${playSessionId}_seek${startTimeTicks}_${Date.now()}_${this.audioOnlyRequestId}`
+    );
+    if (startTimeTicks > 0) {
+      source.searchParams.set('StartTimeTicks', String(startTimeTicks));
+    } else {
+      source.searchParams.delete('StartTimeTicks');
+    }
+
+    this.video.src = source.toString();
+    const onLoaded = () => {
+      this.video.removeEventListener('loadedmetadata', onLoaded);
+      this.video.playbackRate = this.basePlaybackRate;
+      this.onTimeUpdate();
+      if (autoPlay) this.video.play().catch(console.warn);
+    };
+    this.video.addEventListener('loadedmetadata', onLoaded);
+    this.video.load();
+  },
+
   loadStreamSource(data, resumeTime = 0, autoPlay = true) {
     this.destroyHls();
+    this.seekPreviewTime = null;
     const isApple = this.isIOSOrSafari();
     const supportsAV1 = this.canPlayAV1();
+
+    if (data.current_quality === 'audio_only' && data.audio_only_url) {
+      this.loadAudioOnlySource(data, resumeTime, autoPlay);
+      return;
+    }
+    this.audioOnlyStartTime = 0;
 
     // Case 1: iPhone / iPad / Safari
     if (isApple) {
@@ -778,6 +881,7 @@ const Player = {
   onError(e) {
     if (!this.isActive || !this.playbackData) return;
     console.warn('Video element error, checking H.264 HLS fallback:', e);
+    if (this.currentQuality === 'audio_only') return;
     const savedTime = this.video.currentTime || 0;
     if (this.isIOSOrSafari() && this.playbackData.hls_ios_url && this.video.src !== this.playbackData.hls_ios_url) {
       this.video.src = this.playbackData.hls_ios_url;
@@ -812,17 +916,16 @@ const Player = {
         this.video.pause();
       });
       navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-        this.video.currentTime = Math.max(0, this.video.currentTime - (details.seekOffset || 10));
+        this.seekTo(this.getCurrentTime() - (details.seekOffset || 10));
         this.updateMediaSessionPosition();
       });
       navigator.mediaSession.setActionHandler('seekforward', (details) => {
-        const dur = this.video.duration || (this.playbackData?.duration || 0);
-        this.video.currentTime = Math.min(dur, this.video.currentTime + (details.seekOffset || 10));
+        this.seekTo(this.getCurrentTime() + (details.seekOffset || 10));
         this.updateMediaSessionPosition();
       });
       navigator.mediaSession.setActionHandler('seekto', (details) => {
         if (details.seekTime !== undefined) {
-          this.video.currentTime = details.seekTime;
+          this.seekTo(details.seekTime);
           this.updateMediaSessionPosition();
         }
       });
@@ -833,8 +936,8 @@ const Player = {
 
   updateMediaSessionPosition() {
     if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return;
-    const dur = this.video.duration || (this.playbackData?.duration || 0);
-    const cur = this.video.currentTime || 0;
+    const dur = this.getDuration();
+    const cur = this.getCurrentTime();
     if (!dur || !isFinite(dur) || dur <= 0) return;
     try {
       navigator.mediaSession.setPositionState({
@@ -871,7 +974,7 @@ const Player = {
   async switchQuality(qualityKey) {
     if (qualityKey === this.currentQuality) return;
     this.currentQuality = qualityKey;
-    const currentPos = this.video.currentTime || 0;
+    const currentPos = this.getCurrentTime();
     const wasPlaying = !this.video.paused;
 
     if (window.App) window.App.showToast(`Switching quality to ${qualityKey.toUpperCase()}...`);
@@ -915,7 +1018,7 @@ const Player = {
   async switchAudioTrack(trackIndex) {
     if (trackIndex === this.selectedAudioIndex) return;
     this.selectedAudioIndex = trackIndex;
-    const currentPos = this.video.currentTime || 0;
+    const currentPos = this.getCurrentTime();
     const wasPlaying = !this.video.paused;
 
     if (window.App) window.App.showToast('Switching audio track...');
@@ -1065,7 +1168,7 @@ const Player = {
       return;
     }
 
-    const now = this.video.currentTime || 0;
+    const now = this.getCurrentTime();
     let activeText = '';
     for (let i = 0; i < this.subtitleCues.length; i++) {
       const c = this.subtitleCues[i];
@@ -1297,10 +1400,10 @@ const Player = {
   },
 
   onTimeUpdate() {
-    const cur = this.video.currentTime || 0;
-    const dur = this.video.duration || (this.playbackData?.duration || 0);
+    const cur = Number.isFinite(this.seekPreviewTime) ? this.seekPreviewTime : this.getCurrentTime();
+    const dur = this.getDuration();
     if (dur > 0) {
-      this.seekbar.value = (cur / dur) * 100;
+      this.seekbar.value = (Math.min(cur, dur) / dur) * 100;
     }
     this.timeDisplay.textContent = `${this.formatTime(cur)} / ${this.formatTime(dur)}`;
     this.renderActiveSubtitleCue();
@@ -1315,7 +1418,7 @@ const Player = {
   async onEnded() {
     this.wantPlaying = false;
     if (this.currentVideo) {
-      const dur = this.video.duration || this.currentVideo.duration || 0;
+      const dur = this.getDuration();
       const res = await api.reportProgress(this.currentVideo.video_id, dur, dur, true);
       if (res && res.watched && this.onWatchedAutoTriggered) {
         this.onWatchedAutoTriggered();
@@ -1328,7 +1431,7 @@ const Player = {
     this.lastJellyfinProgressSync = 0;
     this.progressSyncInterval = setInterval(async () => {
       if (this.progressSyncInFlight) return;
-      const dur = this.video.duration || (this.currentVideo?.duration || 0);
+      const dur = this.getDuration();
       if (this.currentVideo && !this.video.paused && dur > 0) {
         this.progressSyncInFlight = true;
         const syncToJellyfin = Date.now() - this.lastJellyfinProgressSync >= 30000;
@@ -1336,7 +1439,7 @@ const Player = {
           this.updateMediaSessionPosition();
           const res = await api.reportProgress(
             this.currentVideo.video_id,
-            this.video.currentTime,
+            this.getCurrentTime(),
             dur,
             syncToJellyfin
           );
@@ -1362,7 +1465,7 @@ const Player = {
   },
 
   formatTime(seconds) {
-    if (isNaN(seconds) || seconds < 0) return '0:00';
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     const hours = Math.floor(mins / 60);
@@ -1398,11 +1501,12 @@ const Player = {
     }
     this.consecutiveTapCount = 0;
 
-    const dur = this.video?.duration || (this.currentVideo?.duration || 0);
-    if (this.isActive && this.currentVideo && dur > 0 && this.video.currentTime > 0) {
+    const dur = this.getDuration();
+    const currentTime = this.getCurrentTime();
+    if (this.isActive && this.currentVideo && dur > 0 && currentTime > 0) {
       api.reportProgress(
         this.currentVideo.video_id,
-        this.video.currentTime,
+        currentTime,
         dur,
         true
       );

@@ -7,8 +7,10 @@ from fastapi import BackgroundTasks
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from starlette.testclient import TestClient
+import backend.main as main
 from backend.main import app, report_playback_progress, ProgressPayload
 from backend.playback_service import PlaybackService
+from backend.jellyfin_client import JellyfinClient
 from backend.cleanup_service import CleanupService
 import backend.playback_service as playback_service
 import backend.cleanup_service as cleanup_service
@@ -43,6 +45,109 @@ def test_playback_defaults_to_original_direct(monkeypatch):
     assert result["current_quality"] == "direct"
     assert result["use_hls"] is False
     assert next(q for q in result["qualities"] if q["id"] == "direct")["is_active"] is True
+
+
+def test_playback_audio_only_uses_selected_audio_track(monkeypatch):
+    media = {
+        "video_id": "test-video",
+        "jellyfin_item_id": "jellyfin-item",
+        "title": "Test video",
+        "channel_name": "Test channel",
+        "duration": 120,
+        "playback_position": 0,
+        "watched": False,
+    }
+
+    class FakeConnection:
+        def cursor(self):
+            return object()
+
+    monkeypatch.setattr(playback_service, "get_db", lambda: nullcontext(FakeConnection()))
+    monkeypatch.setattr(playback_service, "find_media_item", lambda cursor, video_id: (media, "video"))
+    monkeypatch.setattr(
+        playback_service.jellyfin,
+        "get_item_details",
+        lambda item_id: {
+            "MediaStreams": [
+                {"Type": "Video", "Index": 0, "Width": 1920, "Height": 1080},
+                {"Type": "Audio", "Index": 1, "Language": "en", "Codec": "aac"},
+                {"Type": "Audio", "Index": 2, "Language": "vi", "Codec": "aac"},
+            ]
+        },
+    )
+    monkeypatch.setattr(playback_service.jellyfin, "stop_active_encodings", lambda device_id: None)
+    monkeypatch.setattr(playback_service.jellyfin, "get_stream_url", lambda *args, **kwargs: "/direct")
+    monkeypatch.setattr(
+        playback_service.jellyfin,
+        "get_audio_only_url",
+        lambda item_id, audio_index: f"/api/jellyfin/{item_id}/audio?AudioStreamIndex={audio_index}",
+    )
+    monkeypatch.setattr(playback_service.jellyfin, "get_hls_url", lambda *args, **kwargs: "/hls")
+    monkeypatch.setattr(playback_service.jellyfin, "get_hls_ios_url", lambda *args, **kwargs: "/hls-ios")
+
+    result = PlaybackService.get_playback_data(
+        "test-video",
+        audio_stream_index=2,
+        quality="audio_only",
+    )
+
+    assert result["current_quality"] == "audio_only"
+    assert result["use_hls"] is False
+    assert result["audio_only_url"] == "/api/jellyfin/jellyfin-item/audio?AudioStreamIndex=2"
+    assert next(q for q in result["qualities"] if q["id"] == "audio_only")["is_active"] is True
+
+
+def test_audio_proxy_resource_is_limited_to_audio_stream(monkeypatch):
+    class FakeCursor:
+        def execute(self, query, params):
+            pass
+
+        def fetchone(self):
+            return ("exists",)
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+    class FakeUpstream:
+        status_code = 200
+        headers = {"Content-Type": "audio/mpeg"}
+
+        def iter_content(self, chunk_size):
+            yield b"audio"
+
+        def close(self):
+            pass
+
+    calls = []
+    monkeypatch.setattr(main, "get_db", lambda: nullcontext(FakeConnection()))
+    monkeypatch.setattr(
+        main.jellyfin,
+        "proxy_media_request",
+        lambda *args: (calls.append(args) or FakeUpstream()),
+    )
+
+    response = client.get("/api/jellyfin/jellyfin-item/audio?AudioCodec=mp3")
+
+    assert response.status_code == 200
+    assert response.content == b"audio"
+    assert calls == [("jellyfin-item", "audio", {"AudioCodec": "mp3"}, None)]
+    assert client.get("/api/jellyfin/jellyfin-item/audio/anything").status_code == 404
+
+
+def test_audio_only_url_and_proxy_target_jellyfin_audio_controller():
+    class FakeSession:
+        def get(self, url, **kwargs):
+            self.url = url
+            self.kwargs = kwargs
+            return object()
+
+    client = JellyfinClient(base_url="http://jellyfin")
+    client.session = FakeSession()
+    client.proxy_media_request("item-id", "audio", {"AudioCodec": "mp3"}, None)
+
+    assert client.session.url == "http://jellyfin/Audio/item-id/stream"
+    assert client.session.kwargs["params"] == {"AudioCodec": "mp3"}
 
 
 def test_progress_jellyfin_sync_is_backgrounded(monkeypatch):

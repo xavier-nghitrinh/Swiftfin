@@ -27,6 +27,7 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
 
 3. **High-Performance Player:**
    - **Direct Play from Jellyfin:** Client streams directly from Jellyfin without proxying media bytes through MyTube.
+   - **Audio-Only Playback:** Select **Audio only** in the quality menu to stream the selected audio track without video.
    - **Multi-Audio Selector:** Supports multiple audio tracks (e.g. English, Vietnamese).
    - **Subtitle Selector:** WebVTT captions directly from Jellyfin with `Off` toggle.
    - **Hold for 1.8x Speed:** Press and hold screen or mouse anywhere on the video for > 250ms to speed up to 1.8x with animated on-screen badge; restores previous speed on release.
