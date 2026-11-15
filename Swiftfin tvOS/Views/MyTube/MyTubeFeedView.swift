@@ -51,14 +51,14 @@ struct MyTubeFeedView: View {
         do {
             let res = try await MyTubeClient.shared.getHomeFeed(
                 unplayedOnly: unplayedOnly,
-                limit: 45,
+                limit: 10,
                 offset: currentOffset
             )
 
             if reset {
-                videos = res.items
+                videos = res.items.shuffled()
             } else {
-                videos.append(contentsOf: res.items)
+                videos.append(contentsOf: res.items.shuffled())
             }
 
             total = res.total
@@ -200,6 +200,28 @@ struct MyTubeFeedView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 80)
+                }
+
+                let continueWatching = videos.filter(\.isPartiallyWatched)
+                if !continueWatching.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Continue Watching")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 50)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: MyTubeTileMetrics.horizontalSpacing) {
+                                ForEach(continueWatching) { video in
+                                    MyTubeVideoCard(video: video)
+                                        .frame(width: MyTubeTileMetrics.width)
+                                }
+                            }
+                            .padding(.horizontal, 50)
+                            .padding(.vertical, 30)
+                        }
+                        .focusEffectDisabled()
+                    }
                 }
 
                 // Video Grid

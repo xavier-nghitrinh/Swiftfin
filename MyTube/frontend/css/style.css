@@ -1437,6 +1437,11 @@ video {
   border-radius: 3px;
 }
 
+.feed-continue-watching .video-card {
+  flex: 0 0 var(--feed-video-card-width, 290px);
+  width: var(--feed-video-card-width, 290px);
+}
+
 /* Poster Card (2:3 Aspect Ratio) */
 .media-card {
   flex: 0 0 160px;

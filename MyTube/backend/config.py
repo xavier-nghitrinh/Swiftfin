@@ -49,7 +49,7 @@ DB_PATH = resolve_db_path()
 # JELLYFIN_SHOWS_LIBRARY_ID = os.environ.get("JELLYFIN_SHOWS_LIBRARY_ID", "a656b907eb3a73532e40e44b968d0225")
 # Jellyfin Configuration
 
-JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "http://localhost:8096").rstrip("/")
+JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "http://192.168.1.108:8096").rstrip("/")
 JELLYFIN_API_KEY = os.environ.get("JELLYFIN_API_KEY", "eaa1950d504a4b54a299d79526c13c06")
 JELLYFIN_USER_ID = os.environ.get("JELLYFIN_USER_ID", "05e68dd11ab249ca96eb3bd4844de2c5")
 JELLYFIN_LIBRARY_ID = os.environ.get("JELLYFIN_LIBRARY_ID", "34f331a89ce405e2b877d68d5ee4d4a2")

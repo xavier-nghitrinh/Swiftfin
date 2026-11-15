@@ -21,8 +21,9 @@ const App = {
 
   // Pagination
   feedOffset: 0,
-  feedLimit: 40,
+  feedLimit: 10,
   feedHasMore: true,
+  feedVideos: [],
   isLoading: false,
 
   // Popover state
@@ -42,6 +43,8 @@ const App = {
   headerShowsBtn: null,
   headerBackBtn: null,
   videoGrid: null,
+  continueWatchingShelf: null,
+  continueWatchingTrack: null,
   channelList: null,
   viewTitle: null,
   channelHeaderAvatar: null,
@@ -68,6 +71,8 @@ const App = {
     this.headerShowsBtn = document.getElementById('header-shows-btn');
     this.headerBackBtn = document.getElementById('header-back-btn');
     this.videoGrid = document.getElementById('video-grid');
+    this.continueWatchingShelf = document.getElementById('feed-continue-watching');
+    this.continueWatchingTrack = document.getElementById('feed-continue-watching-track');
     this.channelList = document.getElementById('channel-list');
     this.viewTitle = document.getElementById('view-title');
     this.channelHeaderAvatar = document.getElementById('channel-header-avatar');
@@ -168,7 +173,10 @@ const App = {
         video.watched = 1;
         this.showToast('Marked as watched');
         if (this.currentRoute === 'home' && this.feedUnplayedOnly && cardEl) {
-          cardEl.remove();
+          this.feedVideos = this.feedVideos.filter((item) => item.video_id !== video.video_id);
+          document.getElementById(`video-card-${video.video_id}`)?.remove();
+          document.getElementById(`continue-video-card-${video.video_id}`)?.remove();
+          this.renderContinueWatchingShelf();
         } else {
           this.handleRoute(true);
         }
@@ -190,6 +198,11 @@ const App = {
         }
         if (video.media_type === 'movie' || video.media_type === 'episode') {
           this.handleRoute(true);
+        } else if (this.currentRoute === 'home') {
+          this.feedVideos = this.feedVideos.filter((item) => item.video_id !== video.video_id);
+          document.getElementById(`video-card-${video.video_id}`)?.remove();
+          document.getElementById(`continue-video-card-${video.video_id}`)?.remove();
+          this.renderContinueWatchingShelf();
         } else if (cardEl) {
           cardEl.remove();
         }
@@ -284,6 +297,11 @@ const App = {
         this.loadMore();
       }
     }, { passive: true });
+
+    window.addEventListener('resize', () => {
+      this.syncContinueWatchingCardWidth();
+      this.loadMoreIfNeeded();
+    });
   },
 
   setupSwipeNavigation() {
@@ -496,21 +514,26 @@ const App = {
       }
 
       // Update or remove the card in-place if its watched state changed while watching
-      if (this.currentWatchData) {
+      if (this.currentWatchData?.watched && hash === '#home') {
         const cardEl = document.getElementById(`video-card-${this.currentWatchData.video_id}`);
-        if (cardEl && this.currentWatchData.watched) {
-          if (hash === '#home' && this.feedUnplayedOnly) {
-            cardEl.remove();
-          } else if (!cardEl.querySelector('.watched-badge')) {
-            const thumbBox = cardEl.querySelector('.thumbnail-box');
-            if (thumbBox) {
-              const badge = document.createElement('span');
-              badge.className = 'watched-badge';
-              badge.textContent = 'WATCHED';
-              thumbBox.appendChild(badge);
-            }
+        const videoId = this.currentWatchData.video_id;
+        this.feedVideos = this.feedVideos.map((video) =>
+          video.video_id === videoId ? { ...video, watched: 1 } : video
+        );
+        document.getElementById(`continue-video-card-${videoId}`)?.remove();
+        if (this.feedUnplayedOnly) {
+          cardEl?.remove();
+          this.feedVideos = this.feedVideos.filter((video) => video.video_id !== videoId);
+        } else if (cardEl && !cardEl.querySelector('.watched-badge')) {
+          const thumbBox = cardEl.querySelector('.thumbnail-box');
+          if (thumbBox) {
+            const badge = document.createElement('span');
+            badge.className = 'watched-badge';
+            badge.textContent = 'WATCHED';
+            thumbBox.appendChild(badge);
           }
         }
+        this.renderContinueWatchingShelf();
       }
 
       const targetY = this.savedBrowseScrollY || 0;
@@ -527,6 +550,9 @@ const App = {
 
     this.feedOffset = 0;
     this.feedHasMore = true;
+    if (this.continueWatchingShelf) {
+      this.continueWatchingShelf.style.display = 'none';
+    }
 
     if (hash.startsWith('#channel/')) {
       this.currentRoute = hash;
@@ -710,11 +736,14 @@ const App = {
   // 1. Home Feed View
   // =========================================================
   async renderHomeFeed(append = false) {
+    let shouldCheckAutoLoad = false;
     if (!append) {
       this.viewTitle.textContent = 'Subscription Feed';
       this.videoGrid.style.display = 'grid';
       this.channelList.style.display = 'none';
       this.videoGrid.innerHTML = '';
+      this.feedVideos = [];
+      this.renderContinueWatchingShelf();
       this.renderFeedChips();
     }
 
@@ -727,14 +756,53 @@ const App = {
         this.showEmpty(true, 'No new unwatched videos!', 'Switch to "All Videos" or sync for new uploads.');
       } else {
         this.showEmpty(false);
-        data.items.forEach((video) => {
+        const batch = this.shuffleItems(data.items);
+        this.feedVideos.push(...batch);
+        batch.forEach((video) => {
           this.videoGrid.appendChild(this.createVideoCard(video));
         });
+        this.renderContinueWatchingShelf();
+        shouldCheckAutoLoad = batch.length > 0;
       }
     } catch (err) {
       console.error(err);
     } finally {
       this.showLoading(false);
+      if (shouldCheckAutoLoad) {
+        this.loadMoreIfNeeded();
+      }
+    }
+  },
+
+  shuffleItems(items) {
+    const shuffled = items.slice();
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const randomIndex = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+    }
+    return shuffled;
+  },
+
+  renderContinueWatchingShelf() {
+    if (!this.continueWatchingShelf || !this.continueWatchingTrack) return;
+    this.syncContinueWatchingCardWidth();
+    const videos = this.feedVideos.filter((video) =>
+      !video.watched && Number(video.playback_position) > 5
+    );
+
+    this.continueWatchingTrack.innerHTML = '';
+    this.continueWatchingShelf.style.display = videos.length > 0 ? 'block' : 'none';
+    videos.forEach((video) => {
+      this.continueWatchingTrack.appendChild(this.createVideoCard(video, 'continue-video-card-'));
+    });
+  },
+
+  syncContinueWatchingCardWidth() {
+    const feedCard = this.videoGrid?.querySelector('.video-card');
+    if (!feedCard || !this.continueWatchingTrack) return;
+    const width = feedCard.getBoundingClientRect().width;
+    if (width > 0) {
+      this.continueWatchingTrack.style.setProperty('--feed-video-card-width', `${width}px`);
     }
   },
 
@@ -811,6 +879,7 @@ const App = {
   // 3. Channel Feed View
   // =========================================================
   async renderChannelFeed(append = false) {
+    let shouldCheckAutoLoad = false;
     if (!append) {
       this.videoGrid.style.display = 'grid';
       this.channelList.style.display = 'none';
@@ -851,11 +920,15 @@ const App = {
         data.items.forEach((video) => {
           this.videoGrid.appendChild(this.createVideoCard(video));
         });
+        shouldCheckAutoLoad = data.items.length > 0;
       }
     } catch (err) {
       console.error(err);
     } finally {
       this.showLoading(false);
+      if (shouldCheckAutoLoad) {
+        this.loadMoreIfNeeded();
+      }
     }
   },
 
@@ -941,6 +1014,15 @@ const App = {
     }
   },
 
+  loadMoreIfNeeded() {
+    const isPaginatedBrowse = this.currentRoute === 'home' || this.currentRoute.startsWith('#channel/');
+    if (!isPaginatedBrowse || this.isLoading || !this.feedHasMore) return;
+    if (!this.videoGrid.querySelector('.video-card')) return;
+    if (document.documentElement.scrollHeight <= window.innerHeight) {
+      this.loadMore();
+    }
+  },
+
   // =========================================================
   // Card Builders & Popover Menu
   // =========================================================
@@ -962,10 +1044,10 @@ const App = {
     }
   },
 
-  createVideoCard(video) {
+  createVideoCard(video, idPrefix = 'video-card-') {
     const card = document.createElement('div');
     card.className = 'video-card';
-    card.id = `video-card-${video.video_id}`;
+    card.id = `${idPrefix}${video.video_id}`;
 
     const thumbUrl = video.thumbnail_url || `/thumbnails/videos/${video.video_id}.jpg`;
     const channelThumbUrl = video.channel_thumbnail_url || `/thumbnails/channels/${video.channel_id}.jpg`;
