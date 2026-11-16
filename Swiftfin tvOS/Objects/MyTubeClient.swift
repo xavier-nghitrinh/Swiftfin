@@ -12,6 +12,8 @@ import Foundation
 enum MyTubeError: LocalizedError {
 
     case noActiveServer
+    case noActiveUser
+    case userNotResolved
     case invalidURL
     case serverError(Int, String)
 
@@ -19,6 +21,10 @@ enum MyTubeError: LocalizedError {
         switch self {
         case .noActiveServer:
             return "No active Jellyfin server connection found"
+        case .noActiveUser:
+            return "No active Swiftfin user found"
+        case .userNotResolved:
+            return "MyTube user is still loading"
         case .invalidURL:
             return "Invalid MyTube server URL"
         case let .serverError(code, message):
@@ -34,11 +40,35 @@ final class MyTubeClient {
 
     private let session: URLSession
 
+    private(set) var userId: String?
+
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 30
         self.session = URLSession(configuration: config)
+    }
+
+    // MARK: - User
+
+    /// Resolves the MyTube user for the logged-in Swiftfin user and stores its id for scoped requests.
+    func resolveCurrentUser() async throws -> String {
+        userId = nil
+
+        guard let username = Container.shared.currentUserSession()?.user.username, !username.isEmpty else {
+            throw MyTubeError.noActiveUser
+        }
+
+        let base = try baseURL()
+        var request = URLRequest(url: base.appendingPathComponent("users").appendingPathComponent("ensure"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["name": username])
+
+        let data = try await execute(request)
+        let user = try JSONDecoder().decode(MyTubeUser.self, from: data)
+        userId = user.userId
+        return user.userId
     }
 
     private func baseURL() throws -> URL {
@@ -74,9 +104,14 @@ final class MyTubeClient {
         return try await fetch(url)
     }
 
-    func getChannels() async throws -> [MyTubeChannel] {
+    func getChannels(subscription: MyTubeChannelSubscriptionFilter = .all) async throws -> [MyTubeChannel] {
         let base = try baseURL()
-        let url = base.appendingPathComponent("channels")
+        var components = URLComponents(url: base.appendingPathComponent("channels"), resolvingAgainstBaseURL: true)
+        components?.queryItems = [
+            URLQueryItem(name: "subscription", value: subscription.rawValue)
+        ]
+
+        guard let url = components?.url else { throw MyTubeError.invalidURL }
         return try await fetch(url)
     }
 
@@ -129,12 +164,6 @@ final class MyTubeClient {
         return try await fetch(url)
     }
 
-    func getTrash() async throws -> [MyTubeTrashItem] {
-        let base = try baseURL()
-        let url = base.appendingPathComponent("trash")
-        return try await fetch(url)
-    }
-
     func search(query: String) async throws -> [MyTubeVideo] {
         let base = try baseURL()
         var components = URLComponents(url: base.appendingPathComponent("search"), resolvingAgainstBaseURL: true)
@@ -153,8 +182,7 @@ final class MyTubeClient {
             let base = try baseURL()
             let url = base.appendingPathComponent("videos").appendingPathComponent(videoId).appendingPathComponent("progress")
 
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
+            var request = try scopedRequest(url, method: "POST")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
             let payload: [String: Double] = [
@@ -173,55 +201,54 @@ final class MyTubeClient {
     func markWatched(videoId: String) async throws {
         let base = try baseURL()
         let url = base.appendingPathComponent("videos").appendingPathComponent(videoId).appendingPathComponent("watched")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        let request = try scopedRequest(url, method: "POST")
         _ = try await execute(request)
     }
 
     func markUnwatched(videoId: String) async throws {
         let base = try baseURL()
         let url = base.appendingPathComponent("videos").appendingPathComponent(videoId).appendingPathComponent("unwatched")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        let request = try scopedRequest(url, method: "POST")
         _ = try await execute(request)
     }
 
-    func moveToTrash(videoId: String) async throws {
+    func setChannelSubscription(channelId: String, subscribed: Bool) async throws {
         let base = try baseURL()
-        let url = base.appendingPathComponent("videos").appendingPathComponent(videoId).appendingPathComponent("trash")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        _ = try await execute(request)
-    }
-
-    func restoreFromTrash(videoId: String) async throws {
-        let base = try baseURL()
-        let url = base.appendingPathComponent("videos").appendingPathComponent(videoId).appendingPathComponent("restore")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        let url = base.appendingPathComponent("channels").appendingPathComponent(channelId).appendingPathComponent("subscription")
+        var request = try scopedRequest(url, method: "PUT")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["subscribed": subscribed])
         _ = try await execute(request)
     }
 
     func deletePermanently(videoId: String) async throws {
         let base = try baseURL()
         let url = base.appendingPathComponent("videos").appendingPathComponent(videoId)
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
+        let request = try scopedRequest(url, method: "DELETE")
         _ = try await execute(request)
     }
 
     func triggerScan() async throws {
         let base = try baseURL()
         let url = base.appendingPathComponent("admin").appendingPathComponent("scan")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        let request = try scopedRequest(url, method: "POST")
         _ = try await execute(request)
     }
 
     // MARK: - Helpers
 
+    private func scopedRequest(_ url: URL, method: String = "GET") throws -> URLRequest {
+        guard let userId else { throw MyTubeError.userNotResolved }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue(userId, forHTTPHeaderField: "X-MyTube-User")
+        return request
+    }
+
     private func fetch<T: Decodable>(_ url: URL) async throws -> T {
-        let (data, response) = try await session.data(from: url)
+        let request = try scopedRequest(url)
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw MyTubeError.serverError(-1, "Invalid response")
         }

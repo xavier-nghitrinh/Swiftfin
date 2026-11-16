@@ -5,7 +5,7 @@ MyTube is a lightweight, self-hosted YouTube system that turns downloaded videos
 ## Architecture
 
 - **Backend:** FastAPI (Python 3.13) + SQLite. Runs locally on Windows PC (`http://localhost:8000`).
-- **Database:** `I:\mytube.db` on Windows when `I:\` is available; `/media/devmon/EXTERNAL/mytube.db` on Linux when the mount is available; otherwise `data\mytube.db`. Android uses its configured external-storage root. Override with `MYTUBE_DB_PATH` or `MYTUBE_STORAGE_ROOT`.
+- **Database:** `data/mytube.db` inside the project by default (internal disk on the server). Override with `MYTUBE_DB_PATH`.
 - **Media Engine:** Jellyfin server at `http://192.168.1.131:8096`.
 - **Storage:** Local media directory (`/media/devmon/EXTERNAL/yt_video` by default), accessed directly by MyTube and Jellyfin API.
 - **Client:** Modern Progressive Web App (PWA) compatible with Desktop Chrome/Edge/Firefox, Android phones/tablets, and iPhone/iPad.
@@ -36,10 +36,10 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
    - **Background Playback on Lock Screen:** Utilizes `MediaSession API` so audio/video continues playing until the end of the file when phone screen is locked.
    - **Automatic Progress Sync:** Position reported every 3 seconds to keep resume points.
 
-4. **Trash & Auto-Cleanup:**
-   - Deleted items are held in `.trash` for 30 days before permanent deletion from SSD.
-   - Option to permanently delete immediately with one click.
-   - Automatic cleanup integrated with `youtube_scrapper/runner.py`.
+4. **Users & Subscriptions:**
+   - Each user has their own watch progress and resume positions for YouTube videos, movies and episodes.
+   - Channel subscriptions are per user; the home feed and search only show videos from channels you subscribe to. Movies and shows are shared.
+   - Delete permanently with one click (`DELETE /api/videos/{id}`).
 
 ---
 
@@ -98,5 +98,3 @@ When `youtube_scrapper/runner.py` finishes downloading new videos, it automatica
 
 curl -X POST http://127.0.0.1:8000/api/admin/scan
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/admin/scan
-
-3. Calls `http://127.0.0.1:8000/api/admin/cleanup` to delete expired trash files (> 30 days old).

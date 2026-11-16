@@ -36,6 +36,19 @@ enum MyTubeTopShelfCache {
 
     private static let cacheKey = "mytube.continue-watching"
 
+    private static let userIdKey = "mytube.user-id"
+
+    static func updateUserId(_ userId: String?) {
+        guard let defaults = UserDefaults(suiteName: appGroupIdentifier) else { return }
+
+        if defaults.string(forKey: userIdKey) != userId {
+            defaults.removeObject(forKey: cacheKey)
+        }
+
+        defaults.set(userId, forKey: userIdKey)
+        TVTopShelfContentProvider.topShelfContentDidChange()
+    }
+
     private struct Candidate {
 
         let entry: MyTubeTopShelfEntry

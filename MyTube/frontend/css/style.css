@@ -440,6 +440,99 @@ body {
   color: var(--text-muted);
 }
 
+.channel-card .channel-subscribe-btn {
+  margin-top: 12px;
+}
+
+/* User Selection Screen */
+.user-select-view {
+  display: none;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+body.user-select-active .app-header,
+body.user-select-active .app-container {
+  display: none;
+}
+
+body.user-select-active .user-select-view {
+  display: flex;
+}
+
+.user-select-card {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.user-select-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-select-header .logo-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+}
+
+.user-select-header .logo-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.user-select-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.user-select-status {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  min-height: 1.2em;
+}
+
+.user-select-actions,
+.user-create-form {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-create-form input {
+  flex: 1 1 200px;
+  max-width: 320px;
+  background: #121212;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.user-create-form input:focus {
+  border-color: var(--accent-blue);
+}
+
+.user-create-error {
+  width: 100%;
+  text-align: center;
+  color: #ff5252;
+  font-size: 0.85rem;
+  min-height: 1.1em;
+}
+
 /* =========================================================
    YouTube-Style Watch View Layout (PC / iPad / Phone)
    ========================================================= */
@@ -906,12 +999,6 @@ video {
   border-color: var(--accent-blue);
 }
 
-.action-pill.danger:hover {
-  background: rgba(255, 0, 0, 0.18);
-  color: #ff4e4e;
-  border-color: #ff4e4e;
-}
-
 .watch-description {
   margin-top: 14px;
   background: var(--bg-card);
@@ -1027,10 +1114,6 @@ video {
 
 .popover-item:hover {
   background: #3a3a3a;
-}
-
-.popover-item.danger {
-  color: #ff5252;
 }
 
 /* Toast Notification */
@@ -1718,12 +1801,6 @@ video {
 
 .btn-details-action:hover {
   background: var(--bg-hover);
-}
-
-.btn-details-action.danger:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #f87171;
 }
 
 /* Season Tabs & Episode Cards (Shows) */

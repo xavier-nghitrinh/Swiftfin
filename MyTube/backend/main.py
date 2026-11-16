@@ -1,8 +1,8 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from typing import Any, Dict, Optional
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ from backend.playback_service import PlaybackService
 from backend.cleanup_service import CleanupService
 from backend.movies_service import MoviesService
 from backend.shows_service import ShowsService
+from backend.user_service import UserService
 from backend.jellyfin_client import jellyfin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -41,41 +42,101 @@ class ProgressPayload(BaseModel):
     duration: float
     sync_to_jellyfin: bool = False
 
+class UserPayload(BaseModel):
+    name: Optional[str] = None
+
+class SubscriptionPayload(BaseModel):
+    subscribed: bool
+
+def get_current_user(x_mytube_user: Optional[str] = Header(None, alias="X-MyTube-User")) -> Dict[str, Any]:
+    """Resolve the MyTube user identified by the X-MyTube-User header."""
+    if not x_mytube_user:
+        raise HTTPException(status_code=400, detail="X-MyTube-User header required")
+    user = UserService.get_user(x_mytube_user)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+def normalize_user_name(name: Optional[str]) -> str:
+    cleaned = (name or "").strip()
+    if not cleaned or len(cleaned) > 40:
+        raise HTTPException(status_code=400, detail="Name must be 1-40 characters")
+    return cleaned
+
 # Routes
+@app.get("/api/users")
+def list_users():
+    return UserService.list_users()
+
+@app.post("/api/users", status_code=201)
+def create_user(payload: UserPayload):
+    user = UserService.create_user(normalize_user_name(payload.name))
+    if not user:
+        raise HTTPException(status_code=409, detail="Name already exists")
+    return user
+
+@app.delete("/api/users/{user_id}", status_code=204)
+def delete_user(user_id: str):
+    """Delete a user and their subscriptions and progress. Media and channels are not affected."""
+    if not UserService.delete_user(user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    return Response(status_code=204)
+
+@app.post("/api/users/ensure")
+def ensure_user(payload: UserPayload):
+    """Get or create a user by name (case-insensitive). Used by tvOS after Jellyfin login."""
+    return UserService.ensure_user(normalize_user_name(payload.name))
+
 @app.get("/api/home")
 def get_home_feed(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    unplayed_only: bool = Query(True)
+    unplayed_only: bool = Query(True),
+    user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """YouTube-like Subscription Feed: newest videos from all channels, hiding watched."""
-    return FeedService.get_home_feed(limit=limit, offset=offset, unplayed_only=unplayed_only)
+    """YouTube-like Subscription Feed: newest videos from the user's subscribed channels, hiding watched."""
+    return FeedService.get_home_feed(user["user_id"], limit=limit, offset=offset, unplayed_only=unplayed_only)
 
 @app.get("/api/channels")
-def get_channels():
-    """All subscribed channels with unread counts."""
-    return FeedService.get_channels()
+def get_channels(
+    subscription: str = Query("all", pattern="^(all|subscribed|unsubscribed)$"),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """All channels with the user's subscription flag and unread counts."""
+    return FeedService.get_channels(user["user_id"], subscription=subscription)
 
 @app.get("/api/channels/{channel_id}")
-def get_channel(channel_id: str):
-    ch = FeedService.get_channel_detail(channel_id)
+def get_channel(channel_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    ch = FeedService.get_channel_detail(channel_id, user["user_id"])
     if not ch:
         raise HTTPException(status_code=404, detail="Channel not found")
     return ch
+
+@app.put("/api/channels/{channel_id}/subscription")
+def set_channel_subscription(
+    channel_id: str,
+    payload: SubscriptionPayload,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    if not FeedService.get_channel_detail(channel_id, user["user_id"]):
+        raise HTTPException(status_code=404, detail="Channel not found")
+    UserService.set_subscription(user["user_id"], channel_id, payload.subscribed)
+    return {"channel_id": channel_id, "subscribed": payload.subscribed}
 
 @app.get("/api/channels/{channel_id}/videos")
 def get_channel_videos(
     channel_id: str,
     filter_type: str = Query("all", pattern="^(all|unwatched|watched)$"),
     limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Browse all videos inside a specific channel with filter."""
-    return FeedService.get_channel_videos(channel_id, filter_type=filter_type, limit=limit, offset=offset)
+    return FeedService.get_channel_videos(channel_id, user["user_id"], filter_type=filter_type, limit=limit, offset=offset)
 
 @app.get("/api/videos/{video_id}")
-def get_video(video_id: str):
-    video = FeedService.get_video(video_id)
+def get_video(video_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    video = FeedService.get_video(video_id, user["user_id"])
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
     return video
@@ -84,10 +145,16 @@ def get_video(video_id: str):
 def get_playback_info(
     video_id: str,
     audio_stream_index: Optional[int] = None,
-    quality: Optional[str] = None
+    quality: Optional[str] = None,
+    user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Return proxy-backed Jellyfin stream URLs, playback options, tracks, and resume position."""
-    data = PlaybackService.get_playback_data(video_id, audio_stream_index=audio_stream_index, quality=quality)
+    """Return proxy-backed Jellyfin stream URLs, playback options, tracks, and the user's resume position."""
+    data = PlaybackService.get_playback_data(
+        video_id,
+        user["user_id"],
+        audio_stream_index=audio_stream_index,
+        quality=quality,
+    )
     if not data:
         raise HTTPException(status_code=404, detail="Video not found")
     return data
@@ -154,9 +221,14 @@ def get_video_subtitle_vtt(video_id: str, sub_index: int):
     return Response(content=vtt, media_type="text/vtt; charset=utf-8")
 
 @app.post("/api/videos/{video_id}/progress")
-def report_playback_progress(video_id: str, payload: ProgressPayload, background_tasks: BackgroundTasks):
-    """Report playback position. Automatically marks watched if remaining time < 30 seconds."""
-    result = PlaybackService.update_progress(video_id, payload.position, payload.duration)
+def report_playback_progress(
+    video_id: str,
+    payload: ProgressPayload,
+    background_tasks: BackgroundTasks,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Report the user's playback position. Automatically marks watched if remaining time < 30 seconds."""
+    result = PlaybackService.update_progress(video_id, user["user_id"], payload.position, payload.duration)
     if payload.sync_to_jellyfin and result["status"] == "ok" and not result["watched"]:
         background_tasks.add_task(
             PlaybackService.sync_progress_to_jellyfin,
@@ -166,71 +238,57 @@ def report_playback_progress(video_id: str, payload: ProgressPayload, background
     return result
 
 @app.post("/api/videos/{video_id}/watched")
-def mark_video_watched(video_id: str):
-    success = PlaybackService.mark_watched(video_id)
+def mark_video_watched(video_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    success = PlaybackService.mark_watched(video_id, user["user_id"])
     if not success:
         raise HTTPException(status_code=404, detail="Video not found")
     return {"status": "ok", "video_id": video_id, "watched": True}
 
 @app.post("/api/videos/{video_id}/unwatched")
-def mark_video_unwatched(video_id: str):
-    success = PlaybackService.mark_unwatched(video_id)
+def mark_video_unwatched(video_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    success = PlaybackService.mark_unwatched(video_id, user["user_id"])
     if not success:
         raise HTTPException(status_code=404, detail="Video not found")
     return {"status": "ok", "video_id": video_id, "watched": False}
 
-@app.post("/api/videos/{video_id}/trash")
-def move_video_to_trash(video_id: str):
-    """Move video to trash (30 day retention)."""
-    return CleanupService.move_to_trash(video_id)
-
-@app.post("/api/videos/{video_id}/restore")
-def restore_video_from_trash(video_id: str):
-    """Restore video from trash."""
-    return CleanupService.restore_from_trash(video_id)
-
-@app.delete("/api/videos/{video_id}")
+@app.delete("/api/videos/{video_id}", dependencies=[Depends(get_current_user)])
 def delete_video_permanently(video_id: str):
     """Immediately delete video permanently from SSD via Jellyfin."""
     return CleanupService.delete_permanently(video_id)
 
 @app.get("/api/movies/home")
-def get_movies_home():
+def get_movies_home(user: Dict[str, Any] = Depends(get_current_user)):
     """Netflix/Prime style homepage for Movies (continue watching, recently added, 5 random genres)."""
-    return MoviesService.get_movies_home()
+    return MoviesService.get_movies_home(user["user_id"])
 
 @app.get("/api/movies/{movie_id}")
-def get_movie_detail(movie_id: str):
+def get_movie_detail(movie_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     """Full movie details with recommendations."""
-    detail = MoviesService.get_movie_detail(movie_id)
+    detail = MoviesService.get_movie_detail(movie_id, user["user_id"])
     if not detail:
         raise HTTPException(status_code=404, detail="Movie not found")
     return detail
 
 @app.get("/api/shows/home")
-def get_shows_home():
+def get_shows_home(user: Dict[str, Any] = Depends(get_current_user)):
     """Netflix/Prime style homepage for Shows (continue watching, recently added, 5 random genres)."""
-    return ShowsService.get_shows_home()
+    return ShowsService.get_shows_home(user["user_id"])
 
 @app.get("/api/shows/{show_id}")
-def get_show_detail(show_id: str):
+def get_show_detail(show_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     """Full series details with seasons, episodes, and next episode to watch."""
-    detail = ShowsService.get_show_detail(show_id)
+    detail = ShowsService.get_show_detail(show_id, user["user_id"])
     if not detail:
         raise HTTPException(status_code=404, detail="Show not found")
     return detail
 
-@app.get("/api/trash")
-def get_trash():
-    return CleanupService.get_trash_items()
-
 @app.get("/api/search")
-def search_videos(q: str = Query(..., min_length=1)):
-    return FeedService.search(q)
+def search_videos(q: str = Query(..., min_length=1), user: Dict[str, Any] = Depends(get_current_user)):
+    return FeedService.search(q, user["user_id"])
 
 @app.get("/api/stats")
-def get_stats():
-    return FeedService.get_stats()
+def get_stats(user: Dict[str, Any] = Depends(get_current_user)):
+    return FeedService.get_stats(user["user_id"])
 
 @app.api_route("/api/admin/scan", methods=["GET", "POST"])
 async def trigger_scan(request: Request, force: bool = False):
@@ -244,11 +302,6 @@ async def trigger_scan(request: Request, force: bool = False):
         except Exception:
             pass
     return scan_and_sync(force_full=is_force)
-
-@app.api_route("/api/admin/cleanup", methods=["GET", "POST"])
-def trigger_cleanup():
-    """Process expired trash items (> 30 days old)."""
-    return CleanupService.process_due_trash()
 
 @app.post("/api/videos/stop-encodings")
 def stop_active_encodings():

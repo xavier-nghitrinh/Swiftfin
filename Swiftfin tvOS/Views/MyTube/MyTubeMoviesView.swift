@@ -158,9 +158,6 @@ private struct MovieShelfView: View {
 
 struct MyTubeMovieDetailView: View {
 
-    @Router
-    private var router
-
     @Injected(\.currentUserSession)
     private var userSession
 
@@ -178,9 +175,6 @@ struct MyTubeMovieDetailView: View {
 
     @State
     private var isUpdatingStatus = false
-
-    @State
-    private var isMovingToTrash = false
 
     @State
     private var actionError: String?
@@ -236,7 +230,7 @@ struct MyTubeMovieDetailView: View {
     }
 
     private func toggleWatched() {
-        guard !isUpdatingStatus, !isMovingToTrash else { return }
+        guard !isUpdatingStatus else { return }
         let markWatched = !displayMovie.watched
         let movieId = displayMovie.movieId
         isUpdatingStatus = true
@@ -255,21 +249,6 @@ struct MyTubeMovieDetailView: View {
                 updatedMovie.playbackPosition = markWatched ? updatedMovie.duration : 0
                 movieDetail = updatedMovie
                 NotificationCenter.default.post(name: .myTubeFeedNeedsRefresh, object: nil)
-            } catch {
-                actionError = error.localizedDescription
-            }
-        }
-    }
-
-    private func moveToTrash() {
-        guard !isMovingToTrash, !isUpdatingStatus else { return }
-        isMovingToTrash = true
-        Task { @MainActor in
-            defer { isMovingToTrash = false }
-            do {
-                try await MyTubeClient.shared.moveToTrash(videoId: displayMovie.movieId)
-                NotificationCenter.default.post(name: .myTubeFeedNeedsRefresh, object: nil)
-                router.dismiss()
             } catch {
                 actionError = error.localizedDescription
             }
@@ -311,13 +290,7 @@ struct MyTubeMovieDetailView: View {
                         )
                     }
                     .buttonStyle(.bordered)
-                    .disabled(isUpdatingStatus || isMovingToTrash)
-
-                    Button(role: .destructive, action: moveToTrash) {
-                        Label("Trash", systemImage: "trash")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isUpdatingStatus || isMovingToTrash)
+                    .disabled(isUpdatingStatus)
                 }
 
                 if let detailError {

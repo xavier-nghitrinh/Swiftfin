@@ -12,7 +12,7 @@
   <meta name="description" content="Personal YouTube Subscription Feed & Streaming Engine">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=10">
+  <link rel="stylesheet" href="/css/style.css?v=11">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff0000'><path d='M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z'/></svg>">
 </head>
 <body>
@@ -53,6 +53,9 @@
       <button class="btn-icon" id="refresh-sync-btn" title="Sync Library & Thumbnails">
         <svg id="sync-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
       </button>
+      <button class="btn-icon" id="logout-btn" title="Log out">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5c-1.11 0-2 .9-2 2v4h2V5h14v14H5v-4H3v4c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
+      </button>
     </div>
   </header>
 
@@ -77,16 +80,12 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
         <span>Channels</span>
       </a>
-      <a class="nav-item" id="nav-trash" href="#trash">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-        <span>Trash</span>
-      </a>
     </nav>
 
     <!-- Main View -->
     <main class="main-view" id="main-view">
 
-      <!-- 1. Browse View (Feed, Channels, Search, Trash) -->
+      <!-- 1. Browse View (Feed, Channels, Search) -->
       <div id="browse-view">
         <div class="section-header">
           <div class="section-title-group" id="section-title-group">
@@ -241,10 +240,6 @@
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                   <span id="watch-watched-label">Mark Watched</span>
                 </button>
-                <button class="action-pill danger" id="watch-trash-btn">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                  <span>Trash</span>
-                </button>
               </div>
             </div>
             <div class="watch-description" id="watch-description"></div>
@@ -297,20 +292,39 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
       <span id="popover-watched-text">Mark as Watched</span>
     </div>
-    <div class="popover-item danger" id="popover-opt-trash">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-      <span>Move to Trash</span>
-    </div>
   </div>
+
+  <!-- User Selection Screen (shown when no user is selected) -->
+  <section class="user-select-view" id="user-select-view">
+    <div class="user-select-card">
+      <div class="user-select-header">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
+        </div>
+        <h2 class="user-select-title">Who's watching?</h2>
+      </div>
+      <div class="channel-list user-select-list" id="user-select-list"></div>
+      <div class="user-select-status" id="user-select-status"></div>
+      <div class="user-select-actions">
+        <button class="chip" id="user-new-btn" type="button">New User</button>
+      </div>
+      <form class="user-create-form" id="user-create-form" style="display: none;" autocomplete="off">
+        <input type="text" id="user-create-input" maxlength="40" placeholder="Name" required>
+        <button type="submit" class="chip active">Create</button>
+        <button type="button" class="chip" id="user-create-cancel-btn">Cancel</button>
+        <div class="user-create-error" id="user-create-error"></div>
+      </form>
+    </div>
+  </section>
 
   <!-- Subtle Toast Notification -->
   <div class="toast-notification" id="toast-notification"></div>
 
   <!-- Scripts -->
   <script src="/js/hls.min.js"></script>
-  <script src="/js/api.js?v=8"></script>
+  <script src="/js/api.js?v=10"></script>
   <script src="/js/player.js?v=12"></script>
-  <script src="/js/app.js?v=12"></script>
+  <script src="/js/app.js?v=14"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.warn);

@@ -20,6 +20,9 @@ struct MyTubeChannelsView: View {
     private var channels: [MyTubeChannel] = []
 
     @State
+    private var selectedFilter: MyTubeChannelSubscriptionFilter = .all
+
+    @State
     private var isLoading = false
 
     @State
@@ -33,7 +36,7 @@ struct MyTubeChannelsView: View {
         errorMessage = nil
 
         do {
-            channels = try await MyTubeClient.shared.getChannels()
+            channels = try await MyTubeClient.shared.getChannels(subscription: selectedFilter)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -41,14 +44,54 @@ struct MyTubeChannelsView: View {
         isLoading = false
     }
 
+    private func toggleSubscription(_ channel: MyTubeChannel) {
+        Task { @MainActor in
+            do {
+                try await MyTubeClient.shared.setChannelSubscription(
+                    channelId: channel.channelId,
+                    subscribed: !channel.subscribed
+                )
+                await loadChannels()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func filterButton(_ filter: MyTubeChannelSubscriptionFilter) -> some View {
+        Button {
+            selectedFilter = filter
+            Task { await loadChannels() }
+        } label: {
+            Text(filter.title)
+                .font(.callout)
+                .fontWeight(selectedFilter == filter ? .bold : .regular)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(selectedFilter == filter ? Color.red : Color(white: 0.25))
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 30) {
-                Text("Channels")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 50)
-                    .padding(.top, 20)
+                HStack(spacing: 24) {
+                    Text("Channels")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    Spacer()
+
+                    HStack(spacing: 12) {
+                        ForEach(MyTubeChannelSubscriptionFilter.allCases) { filter in
+                            filterButton(filter)
+                        }
+                    }
+                }
+                .padding(.horizontal, 50)
+                .padding(.top, 20)
 
                 if let errorMessage {
                     VStack(spacing: 12) {
@@ -78,44 +121,60 @@ struct MyTubeChannelsView: View {
 
                 LazyVGrid(columns: columns, spacing: 40) {
                     ForEach(channels) { channel in
-                        MyTubeTileButton(action: {
-                            router.route(to: .myTubeChannelDetail(channel: channel))
-                        }) { isFocused in
-                            VStack(spacing: 12) {
-                                ZStack(alignment: .topTrailing) {
-                                    ChannelAvatarView(thumbnailUrl: channel.thumbnailUrl, name: channel.name)
-                                        .frame(width: 140, height: 140)
-                                        .clipShape(Circle())
-                                        .overlay {
-                                            Circle()
-                                                .stroke(isFocused ? Color.white : .clear, lineWidth: MyTubeTileMetrics.focusBorderWidth)
-                                                .allowsHitTesting(false)
+                        VStack(spacing: 16) {
+                            MyTubeTileButton(action: {
+                                router.route(to: .myTubeChannelDetail(channel: channel))
+                            }) { isFocused in
+                                VStack(spacing: 12) {
+                                    ZStack(alignment: .topTrailing) {
+                                        ChannelAvatarView(thumbnailUrl: channel.thumbnailUrl, name: channel.name)
+                                            .frame(width: 140, height: 140)
+                                            .clipShape(Circle())
+                                            .overlay {
+                                                Circle()
+                                                    .stroke(isFocused ? Color.white : .clear, lineWidth: MyTubeTileMetrics.focusBorderWidth)
+                                                    .allowsHitTesting(false)
+                                            }
+
+                                        if channel.unwatchedCount > 0 {
+                                            Text("\(channel.unwatchedCount)")
+                                                .font(.caption2)
+                                                .fontWeight(.bold)
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 4)
+                                                .background(Color.red)
+                                                .clipShape(Capsule())
+                                                .offset(x: 8, y: -4)
                                         }
-
-                                    if channel.unwatchedCount > 0 {
-                                        Text("\(channel.unwatchedCount)")
-                                            .font(.caption2)
-                                            .fontWeight(.bold)
-                                            .foregroundStyle(.white)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 4)
-                                            .background(Color.red)
-                                            .clipShape(Capsule())
-                                            .offset(x: 8, y: -4)
                                     }
+
+                                    Text(channel.name)
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .lineLimit(1)
+
+                                    Text("\(channel.totalVideos) videos • \(channel.formattedSize)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
                                 }
-
-                                Text(channel.name)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .lineLimit(1)
-
-                                Text("\(channel.totalVideos) videos")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                .padding(.vertical, 16)
+                                .frame(maxWidth: .infinity)
                             }
-                            .padding(.vertical, 16)
-                            .frame(maxWidth: .infinity)
+
+                            Button {
+                                toggleSubscription(channel)
+                            } label: {
+                                Label(
+                                    channel.subscribed ? "Subscribed" : "Subscribe",
+                                    systemImage: channel.subscribed ? "checkmark" : "plus"
+                                )
+                                .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(channel.subscribed ? Color.red : Color(white: 0.25))
                         }
                     }
                 }
@@ -125,9 +184,7 @@ struct MyTubeChannelsView: View {
             .padding(.bottom, 60)
         }
         .task {
-            if channels.isEmpty {
-                await loadChannels()
-            }
+            await loadChannels()
         }
     }
 }

@@ -3,18 +3,20 @@ import logging
 import random
 from typing import Dict, Any, List, Optional
 from backend.database import get_db
+from backend.user_service import UserService
 
 logger = logging.getLogger("mytube.movies")
 
 class MoviesService:
     @staticmethod
-    def _row_to_dict(row) -> Dict[str, Any]:
+    def _row_to_dict(row, progress: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         d = dict(row)
         if isinstance(d.get("genres"), str):
             try:
                 d["genres"] = json.loads(d["genres"])
             except Exception:
                 d["genres"] = []
+        d.update(UserService.progress_fields(progress))
         d["media_type"] = "movie"
         duration = float(d.get("duration") or 0)
         pos = float(d.get("playback_position") or 0)
@@ -22,38 +24,33 @@ class MoviesService:
         return d
 
     @classmethod
-    def get_movies_home(cls) -> Dict[str, Any]:
-        """Fetch Netflix/Prime style homepage payload for Movies."""
+    def get_movies_home(cls, user_id: str) -> Dict[str, Any]:
+        """Fetch Netflix/Prime style homepage payload for Movies, with the user's watch state."""
         with get_db() as conn:
             cursor = conn.cursor()
+            progress = UserService.get_progress_map(cursor, user_id, "movie")
 
-            # 1. Continue Watching (in progress, unwatched)
+            # 1. All Available Movies (for browsing and genre grouping)
             cursor.execute("""
                 SELECT * FROM movies
                 WHERE file_status = 'available'
-                  AND watched = 0
-                  AND playback_position > 15
-                ORDER BY updated_at DESC
-                LIMIT 15
+                ORDER BY title ASC
             """)
-            continue_watching = [cls._row_to_dict(r) for r in cursor.fetchall()]
+            all_movies = [cls._row_to_dict(r, progress.get(r["movie_id"])) for r in cursor.fetchall()]
 
-            # 2. Recently Added
+            # 2. Continue Watching (in progress for this user, unwatched)
+            in_progress = [m for m in all_movies if not m["watched"] and m["playback_position"] > 15]
+            in_progress.sort(key=lambda m: progress[m["movie_id"]]["updated_at"], reverse=True)
+            continue_watching = in_progress[:15]
+
+            # 3. Recently Added
             cursor.execute("""
                 SELECT * FROM movies
                 WHERE file_status = 'available'
                 ORDER BY created_at DESC, release_year DESC
                 LIMIT 20
             """)
-            recently_added = [cls._row_to_dict(r) for r in cursor.fetchall()]
-
-            # 3. All Available Movies (for browsing and genre grouping)
-            cursor.execute("""
-                SELECT * FROM movies
-                WHERE file_status = 'available'
-                ORDER BY title ASC
-            """)
-            all_movies = [cls._row_to_dict(r) for r in cursor.fetchall()]
+            recently_added = [cls._row_to_dict(r, progress.get(r["movie_id"])) for r in cursor.fetchall()]
 
             # 4. Group by genres and pick 5 random genres
             genre_map: Dict[str, List[Dict[str, Any]]] = {}
@@ -94,7 +91,7 @@ class MoviesService:
             }
 
     @classmethod
-    def get_movie_detail(cls, movie_id: str) -> Optional[Dict[str, Any]]:
+    def get_movie_detail(cls, movie_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         """Fetch full movie details and related recommendations."""
         with get_db() as conn:
             cursor = conn.cursor()
@@ -103,11 +100,12 @@ class MoviesService:
             if not row:
                 return None
 
-            movie = cls._row_to_dict(row)
+            progress = UserService.get_progress_map(cursor, user_id, "movie")
+            movie = cls._row_to_dict(row, progress.get(movie_id))
 
             # Recommendations based on same genres
             cursor.execute("SELECT * FROM movies WHERE movie_id != ? AND file_status = 'available'", (movie_id,))
-            other_rows = [cls._row_to_dict(r) for r in cursor.fetchall()]
+            other_rows = [cls._row_to_dict(r, progress.get(r["movie_id"])) for r in cursor.fetchall()]
 
             my_genres = set(movie.get("genres", []))
             related = []

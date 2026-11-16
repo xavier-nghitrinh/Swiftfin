@@ -3,6 +3,7 @@ import logging
 import random
 from typing import Dict, Any, List, Optional
 from backend.database import get_db
+from backend.user_service import UserService
 
 logger = logging.getLogger("mytube.shows")
 
@@ -19,8 +20,9 @@ class ShowsService:
         return d
 
     @staticmethod
-    def _episode_row_to_dict(row) -> Dict[str, Any]:
+    def _episode_row_to_dict(row, progress: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         d = dict(row)
+        d.update(UserService.progress_fields(progress))
         d["media_type"] = "episode"
         duration = float(d.get("duration") or 0)
         pos = float(d.get("playback_position") or 0)
@@ -28,38 +30,37 @@ class ShowsService:
         return d
 
     @classmethod
-    def get_shows_home(cls) -> Dict[str, Any]:
-        """Fetch Netflix/Prime style homepage payload for Shows."""
+    def get_shows_home(cls, user_id: str) -> Dict[str, Any]:
+        """Fetch Netflix/Prime style homepage payload for Shows, with the user's watch state."""
         with get_db() as conn:
             cursor = conn.cursor()
+            progress = UserService.get_progress_map(cursor, user_id, "episode")
 
             # 1. Continue Watching:
-            # Find in-progress episodes (watched = 0 AND playback_position > 15), grouped by show
+            # Find the user's in-progress episodes (unwatched and position > 15s), grouped by show
             cursor.execute("""
                 SELECT e.*, s.poster_url AS show_poster_url, s.backdrop_url AS show_backdrop_url
                 FROM episodes e
                 JOIN shows s ON e.show_id = s.show_id
                 WHERE e.file_status = 'available'
                   AND s.file_status = 'available'
-                  AND e.watched = 0
-                  AND e.playback_position > 15
-                ORDER BY e.updated_at DESC
             """)
-            in_progress_rows = cursor.fetchall()
+            episodes_with_progress = [cls._episode_row_to_dict(r, progress.get(r["episode_id"])) for r in cursor.fetchall()]
+            in_progress_eps = [e for e in episodes_with_progress if not e["watched"] and e["playback_position"] > 15]
+            in_progress_eps.sort(key=lambda e: progress[e["episode_id"]]["updated_at"], reverse=True)
             seen_shows = set()
             continue_watching = []
 
-            for r in in_progress_rows:
-                sid = r["show_id"]
+            for ep in in_progress_eps:
+                sid = ep["show_id"]
                 if sid in seen_shows:
                     continue
                 seen_shows.add(sid)
-                ep = cls._episode_row_to_dict(r)
                 item = {
                     "show_id": sid,
-                    "title": r["show_name"],
-                    "poster_url": r["show_poster_url"] or ep.get("thumbnail_url") or "",
-                    "backdrop_url": r["show_backdrop_url"] or "",
+                    "title": ep["show_name"],
+                    "poster_url": ep["show_poster_url"] or ep.get("thumbnail_url") or "",
+                    "backdrop_url": ep["show_backdrop_url"] or "",
                     "media_type": "show",
                     "current_episode": ep,
                     "playback_position": ep["playback_position"],
@@ -123,8 +124,8 @@ class ShowsService:
             }
 
     @classmethod
-    def get_show_detail(cls, show_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch full series metadata, grouped seasons, episodes, and the next-to-watch episode."""
+    def get_show_detail(cls, show_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch full series metadata, grouped seasons, episodes, and the next-to-watch episode for this user."""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM shows WHERE show_id = ?", (show_id,))
@@ -133,6 +134,7 @@ class ShowsService:
                 return None
 
             show = cls._show_row_to_dict(show_row)
+            progress = UserService.get_progress_map(cursor, user_id, "episode")
 
             # Fetch all episodes for this show
             cursor.execute("""
@@ -141,7 +143,7 @@ class ShowsService:
                 ORDER BY season_number ASC, episode_number ASC
             """, (show_id,))
             ep_rows = cursor.fetchall()
-            episodes = [cls._episode_row_to_dict(r) for r in ep_rows]
+            episodes = [cls._episode_row_to_dict(r, progress.get(r["episode_id"])) for r in ep_rows]
 
             # Group episodes by seasons
             seasons_map: Dict[int, Dict[str, Any]] = {}
@@ -163,7 +165,7 @@ class ShowsService:
             next_ep = None
             in_progress = [e for e in episodes if e["watched"] == 0 and e["playback_position"] > 10]
             if in_progress:
-                in_progress.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
+                in_progress.sort(key=lambda x: progress[x["episode_id"]]["updated_at"], reverse=True)
                 next_ep = in_progress[0]
             else:
                 # 2. First unwatched episode

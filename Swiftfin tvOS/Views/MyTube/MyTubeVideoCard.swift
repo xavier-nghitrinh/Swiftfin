@@ -135,17 +135,6 @@ struct MyTubeVideoCard: View {
         }
     }
 
-    private func moveToTrash() {
-        Task { @MainActor in
-            do {
-                try await MyTubeClient.shared.moveToTrash(videoId: video.videoId)
-                onStatusChanged?()
-            } catch {
-                print("Failed to move video to trash: \(error)")
-            }
-        }
-    }
-
     var body: some View {
         MyTubeTileButton(action: play) { isFocused in
             VStack(alignment: .leading, spacing: 8) {
@@ -194,12 +183,6 @@ struct MyTubeVideoCard: View {
                     video.watched ? "Mark as Unwatched" : "Mark as Watched",
                     systemImage: video.watched ? "eye.slash" : "checkmark.circle"
                 )
-            }
-
-            Button(role: .destructive) {
-                moveToTrash()
-            } label: {
-                Label("Move to Trash", systemImage: "trash")
             }
         }
     }

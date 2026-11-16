@@ -30,7 +30,6 @@ struct MyTubeRootView: View {
         case movies
         case shows
         case search
-        case trash
         case settings
 
         var id: String { rawValue }
@@ -45,8 +44,27 @@ struct MyTubeRootView: View {
     @State
     private var isRefreshingTopShelf = false
 
+    @State
+    private var isUserResolved = false
+
+    @State
+    private var userErrorMessage: String?
+
     init(pendingTopShelfURL: Binding<URL?>) {
         self._pendingTopShelfURL = pendingTopShelfURL
+    }
+
+    private func resolveUser() async {
+        userErrorMessage = nil
+
+        do {
+            let userId = try await MyTubeClient.shared.resolveCurrentUser()
+            MyTubeTopShelfCache.updateUserId(userId)
+            isUserResolved = true
+        } catch {
+            MyTubeTopShelfCache.updateUserId(nil)
+            userErrorMessage = error.localizedDescription
+        }
     }
 
     private func refreshTopShelf() async {
@@ -130,9 +148,6 @@ struct MyTubeRootView: View {
     private var searchCoordinator = NavigationCoordinator()
 
     @StateObject
-    private var trashCoordinator = NavigationCoordinator()
-
-    @StateObject
     private var settingsCoordinator = NavigationCoordinator()
 
     @ContentBuilder
@@ -183,16 +198,7 @@ struct MyTubeRootView: View {
                 Label("Search", systemImage: "magnifyingglass")
             }
 
-            // 6. Trash
-            SwiftUI.Tab(value: MyTubeTab.trash) {
-                NavigationInjectionView(coordinator: trashCoordinator) {
-                    MyTubeTrashView()
-                }
-            } label: {
-                Label("Trash", systemImage: "trash.fill")
-            }
-
-            // 7. Settings
+            // 6. Settings
             SwiftUI.Tab(value: MyTubeTab.settings) {
                 NavigationInjectionView(coordinator: settingsCoordinator) {
                     SettingsView()
@@ -203,25 +209,59 @@ struct MyTubeRootView: View {
         }
     }
 
+    @ViewBuilder
+    private var userResolutionContent: some View {
+        if let userErrorMessage {
+            VStack(spacing: 24) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.yellow)
+                Text(userErrorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Button("Retry") {
+                    Task { await resolveUser() }
+                }
+                .buttonStyle(.bordered)
+            }
+        } else {
+            ProgressView()
+                .scaleEffect(1.2)
+        }
+    }
+
     var body: some View {
-        tabViewContent
-            .tabViewStyle(.tabBarOnly)
+        Group {
+            if isUserResolved {
+                tabViewContent
+                    .tabViewStyle(.tabBarOnly)
+                    .task {
+                        await refreshTopShelf()
+                        if let url = pendingTopShelfURL {
+                            pendingTopShelfURL = nil
+                            playTopShelfItem(from: url)
+                        }
+                    }
+                    .onChange(of: pendingTopShelfURL) { _, url in
+                        guard let url else { return }
+                        pendingTopShelfURL = nil
+                        playTopShelfItem(from: url)
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: .myTubeFeedNeedsRefresh)) { _ in
+                        Task { @MainActor in
+                            await refreshTopShelf()
+                        }
+                    }
+            } else {
+                userResolutionContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
         .task {
-            await refreshTopShelf()
-            if let url = pendingTopShelfURL {
-                pendingTopShelfURL = nil
-                playTopShelfItem(from: url)
-            }
+            await resolveUser()
         }
-        .onChange(of: pendingTopShelfURL) { _, url in
-            guard let url else { return }
-            pendingTopShelfURL = nil
-            playTopShelfItem(from: url)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .myTubeFeedNeedsRefresh)) { _ in
-            Task { @MainActor in
-                await refreshTopShelf()
-            }
+        .onDisappear {
+            MyTubeTopShelfCache.updateUserId(nil)
         }
         .alert("MyTube", isPresented: Binding(
             get: { topShelfError != nil },

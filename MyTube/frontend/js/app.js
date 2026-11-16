@@ -16,6 +16,7 @@ const App = {
   currentWatchData: null,
   upNextSource: 'feed', // 'feed' or 'channel'
   channelFilter: 'all', // 'all', 'unwatched', 'watched'
+  channelSubscriptionFilter: 'all', // 'all', 'subscribed', 'unsubscribed'
   feedUnplayedOnly: true,
   searchQuery: '',
 
@@ -87,10 +88,15 @@ const App = {
     Player.init();
     this.bindEvents();
     this.setupSwipeNavigation();
-    this.handleRoute();
-    this.updateStats();
 
     window.addEventListener('hashchange', () => this.handleRoute());
+    window.addEventListener('mytube:user-invalid', () => this.returnToUserSelection());
+
+    if (api.getUserId()) {
+      this.enterApp();
+    } else {
+      this.showUserSelection();
+    }
   },
 
   bindEvents() {
@@ -184,34 +190,13 @@ const App = {
       this.updateStats();
     });
 
-    document.getElementById('popover-opt-trash').addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const video = this.popoverVideo;
-      const cardEl = this.popoverCardEl;
-      this.hidePopover();
-      if (!video) return;
+    document.getElementById('logout-btn').addEventListener('click', () => this.logout());
 
-      try {
-        const result = await api.moveToTrash(video.video_id);
-        if (!result || result.status !== 'ok') {
-          throw new Error(result?.message || 'Failed to move media to Trash');
-        }
-        if (video.media_type === 'movie' || video.media_type === 'episode') {
-          this.handleRoute(true);
-        } else if (this.currentRoute === 'home') {
-          this.feedVideos = this.feedVideos.filter((item) => item.video_id !== video.video_id);
-          document.getElementById(`video-card-${video.video_id}`)?.remove();
-          document.getElementById(`continue-video-card-${video.video_id}`)?.remove();
-          this.renderContinueWatchingShelf();
-        } else if (cardEl) {
-          cardEl.remove();
-        }
-        this.showToast('Moved to Trash');
-        this.updateStats();
-      } catch (error) {
-        console.error('Failed to move media to Trash:', error);
-        this.showToast('Failed to move to Trash');
-      }
+    document.getElementById('user-new-btn').addEventListener('click', () => this.toggleNewUserForm(true));
+    document.getElementById('user-create-cancel-btn').addEventListener('click', () => this.toggleNewUserForm(false));
+    document.getElementById('user-create-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.createUserFromForm();
     });
 
     // Close popover on outside click or scroll
@@ -257,24 +242,6 @@ const App = {
         this.showToast('Marked as watched');
       }
       this.updateStats();
-    });
-
-    document.getElementById('watch-trash-btn').addEventListener('click', async () => {
-      if (!this.currentWatchData) return;
-      const vid = this.currentWatchData.video_id;
-      const mType = this.currentWatchData.media_type;
-      await api.moveToTrash(vid);
-      const cardEl = document.getElementById(`video-card-${vid}`);
-      if (cardEl) cardEl.remove();
-      this.showToast('Moved to Trash');
-      this.updateStats();
-      if (mType === 'movie') {
-        window.location.hash = '#movies';
-      } else if (mType === 'episode') {
-        window.location.hash = `#show/${encodeURIComponent(this.currentWatchData.channel_id)}`;
-      } else {
-        this.goBack();
-      }
     });
 
     // Up Next filter chips in Watch View
@@ -371,6 +338,155 @@ const App = {
     }
   },
 
+  // =========================================================
+  // User Selection & Logout
+  // =========================================================
+  enterApp() {
+    document.body.classList.remove('user-select-active');
+    this.handleRoute();
+    this.updateStats();
+  },
+
+  resetSessionState() {
+    if (Player.isActive) Player.stop();
+    this.hidePopover();
+    this.routeHistory = [];
+    this.hasBrowseDom = false;
+    this.feedVideos = [];
+    this.currentWatchData = null;
+    this.currentWatchVideoId = null;
+    this.currentRoute = 'home';
+  },
+
+  showUserSelection() {
+    this.resetSessionState();
+    document.body.classList.add('user-select-active');
+    this.renderUserSelection();
+  },
+
+  selectUser(user) {
+    api.setUser(user);
+    this.enterApp();
+  },
+
+  logout() {
+    this.returnToUserSelection();
+  },
+
+  returnToUserSelection() {
+    if (Player.isActive) Player.stop();
+    api.clearUser();
+    window.location.hash = '#home';
+    this.showUserSelection();
+  },
+
+  async renderUserSelection() {
+    const listEl = document.getElementById('user-select-list');
+    const statusEl = document.getElementById('user-select-status');
+    listEl.innerHTML = '';
+    statusEl.textContent = 'Loading users...';
+    this.toggleNewUserForm(false);
+
+    try {
+      const users = await api.getUsers();
+      statusEl.textContent = users.length === 0 ? 'No users yet. Create one to get started.' : '';
+      users.forEach((user) => listEl.appendChild(this.createUserCard(user)));
+    } catch (err) {
+      console.error('Failed to load users:', err);
+      statusEl.textContent = 'Could not load users. Check the server and try again.';
+    }
+  },
+
+  createUserCard(user) {
+    const card = document.createElement('div');
+    card.className = 'channel-card';
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = 'channel-avatar';
+    this.populateAvatarElement(avatarDiv, user.name, null);
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'channel-card-name';
+    nameDiv.textContent = user.name;
+
+    card.append(avatarDiv, nameDiv);
+
+    let pressTimer = null;
+    let longPressed = false;
+    const cancelPress = () => {
+      clearTimeout(pressTimer);
+      pressTimer = null;
+    };
+    card.addEventListener('pointerdown', () => {
+      longPressed = false;
+      cancelPress();
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        longPressed = true;
+        this.confirmDeleteUser(user);
+      }, 700);
+    });
+    card.addEventListener('pointerup', cancelPress);
+    card.addEventListener('pointerleave', cancelPress);
+    card.addEventListener('pointercancel', cancelPress);
+    card.addEventListener('contextmenu', (e) => e.preventDefault());
+    card.addEventListener('click', (e) => {
+      if (longPressed) {
+        e.preventDefault();
+        longPressed = false;
+        return;
+      }
+      this.selectUser(user);
+    });
+    return card;
+  },
+
+  async confirmDeleteUser(user) {
+    const confirmed = window.confirm(`Delete user "${user.name}"? Their subscriptions and watch progress will be removed.`);
+    if (!confirmed) return;
+
+    const statusEl = document.getElementById('user-select-status');
+    try {
+      await api.deleteUser(user.user_id);
+      this.showToast(`Deleted user ${user.name}`);
+      this.renderUserSelection();
+    } catch (err) {
+      console.error('Failed to delete user:', err);
+      statusEl.textContent = 'Could not delete user. Try again.';
+    }
+  },
+
+  toggleNewUserForm(show) {
+    const form = document.getElementById('user-create-form');
+    const input = document.getElementById('user-create-input');
+    form.style.display = show ? 'flex' : 'none';
+    document.getElementById('user-new-btn').style.display = show ? 'none' : '';
+    document.getElementById('user-create-error').textContent = '';
+    if (show) {
+      input.value = '';
+      input.focus();
+    }
+  },
+
+  async createUserFromForm() {
+    const input = document.getElementById('user-create-input');
+    const errorEl = document.getElementById('user-create-error');
+    const name = input.value.trim();
+    errorEl.textContent = '';
+
+    if (!name) {
+      errorEl.textContent = 'Name is required';
+      return;
+    }
+
+    try {
+      const user = await api.createUser(name);
+      this.selectUser(user);
+    } catch (err) {
+      errorEl.textContent = err.message;
+    }
+  },
+
   async updateStats() {
     try {
       const stats = await api.getStats();
@@ -397,6 +513,11 @@ const App = {
   },
 
   handleRoute(forceReload = false) {
+    if (!api.getUserId()) {
+      if (!document.body.classList.contains('user-select-active')) this.showUserSelection();
+      return;
+    }
+
     const hash = window.location.hash || '#home';
     const wasWatching = String(this.currentRoute).startsWith('#watch/');
     this.hidePopover();
@@ -490,7 +611,7 @@ const App = {
       return;
     }
 
-    // 6. YouTube Browse Views (Home, Channels, Channel, Trash, Search)
+    // 6. YouTube Browse Views (Home, Channels, Channel, Search)
     hideAllViews();
     this.browseView.style.display = 'block';
     this.updateHeaderModeNav('youtube');
@@ -503,9 +624,6 @@ const App = {
       } else if (hash === '#channels') {
         this.currentRoute = 'channels';
         this.setActiveNav('nav-channels');
-      } else if (hash === '#trash') {
-        this.currentRoute = 'trash';
-        this.setActiveNav('nav-trash');
       } else if (hash.startsWith('#search')) {
         this.currentRoute = 'search';
       } else {
@@ -564,10 +682,6 @@ const App = {
       this.currentRoute = 'channels';
       this.setActiveNav('nav-channels');
       this.renderChannelsList();
-    } else if (hash === '#trash') {
-      this.currentRoute = 'trash';
-      this.setActiveNav('nav-trash');
-      this.renderTrash();
     } else if (hash.startsWith('#search')) {
       this.currentRoute = 'search';
       const urlParams = new URLSearchParams(hash.split('?')[1]);
@@ -753,7 +867,7 @@ const App = {
       this.feedHasMore = data.has_more;
 
       if (!append && data.items.length === 0) {
-        this.showEmpty(true, 'No new unwatched videos!', 'Switch to "All Videos" or sync for new uploads.');
+        this.showEmpty(true, 'No new unwatched videos! Or you didn\'t subscribe to any channels.', 'Switch to "All Videos", subscribe some channels or sync for new uploads.');
       } else {
         this.showEmpty(false);
         const batch = this.shuffleItems(data.items);
@@ -829,8 +943,8 @@ const App = {
   // 2. Channels List View
   // =========================================================
   async renderChannelsList() {
-    this.viewTitle.textContent = 'Subscribed Channels';
-    this.filterChips.innerHTML = '';
+    this.viewTitle.textContent = 'Channels';
+    this.renderChannelSubscriptionChips();
     this.videoGrid.style.display = 'none';
     this.channelList.style.display = 'grid';
     this.channelList.innerHTML = '';
@@ -838,34 +952,18 @@ const App = {
     this.showLoading(true);
 
     try {
-      const channels = await api.getChannels();
+      const channels = await api.getChannels(this.channelSubscriptionFilter);
       if (channels.length === 0) {
-        this.showEmpty(true, 'No channels found', 'Sync your library to index downloaded channels.');
+        const emptyMessages = {
+          all: ['No channels found', 'Sync your library to index downloaded channels.'],
+          subscribed: ['No subscribed channels', 'Subscribe to a channel to see its videos in your feed.'],
+          unsubscribed: ['No unsubscribed channels', 'You are subscribed to every channel.']
+        };
+        const [title, subtitle] = emptyMessages[this.channelSubscriptionFilter];
+        this.showEmpty(true, title, subtitle);
       } else {
         channels.forEach((ch) => {
-          const card = document.createElement('div');
-          card.className = 'channel-card';
-
-          const avatarDiv = document.createElement('div');
-          avatarDiv.className = 'channel-avatar';
-          this.populateAvatarElement(avatarDiv, ch.name, ch.thumbnail_url);
-
-          const nameDiv = document.createElement('div');
-          nameDiv.className = 'channel-card-name';
-          nameDiv.textContent = ch.name;
-
-          const metaDiv = document.createElement('div');
-          metaDiv.className = 'channel-card-meta';
-          metaDiv.textContent = `${ch.unwatched_count} unwatched • ${ch.total_videos} videos`;
-
-          card.appendChild(avatarDiv);
-          card.appendChild(nameDiv);
-          card.appendChild(metaDiv);
-
-          card.addEventListener('click', () => {
-            window.location.hash = `#channel/${encodeURIComponent(ch.channel_id)}`;
-          });
-          this.channelList.appendChild(card);
+          this.channelList.appendChild(this.createChannelCard(ch));
         });
       }
     } catch (err) {
@@ -873,6 +971,81 @@ const App = {
     } finally {
       this.showLoading(false);
     }
+  },
+
+  renderChannelSubscriptionChips() {
+    const options = [['all', 'All'], ['subscribed', 'Subscribed'], ['unsubscribed', 'Unsubscribed']];
+    this.filterChips.innerHTML = options.map(([value, label]) => `
+      <div class="chip ${this.channelSubscriptionFilter === value ? 'active' : ''}" data-subscription="${value}">${label}</div>
+    `).join('');
+
+    this.filterChips.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        this.channelSubscriptionFilter = chip.dataset.subscription;
+        this.renderChannelsList();
+      });
+    });
+  },
+
+  createChannelCard(ch) {
+    const card = document.createElement('div');
+    card.className = 'channel-card';
+
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = 'channel-avatar';
+    this.populateAvatarElement(avatarDiv, ch.name, ch.thumbnail_url);
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'channel-card-name';
+    nameDiv.textContent = ch.name;
+
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'channel-card-meta';
+    metaDiv.textContent = `${ch.total_videos} videos • ${this.formatFileSize(ch.total_size_bytes)}`;
+
+    const subscribeBtn = document.createElement('button');
+    subscribeBtn.type = 'button';
+    subscribeBtn.className = 'chip channel-subscribe-btn';
+    this.updateSubscribeButton(subscribeBtn, ch.subscribed);
+    subscribeBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      subscribeBtn.disabled = true;
+      try {
+        const result = await api.setChannelSubscription(ch.channel_id, !ch.subscribed);
+        ch.subscribed = result.subscribed;
+        if (this.channelSubscriptionFilter !== 'all') {
+          this.renderChannelsList();
+          return;
+        }
+        this.updateSubscribeButton(subscribeBtn, ch.subscribed);
+        this.showToast(ch.subscribed ? `Subscribed to ${ch.name}` : `Unsubscribed from ${ch.name}`);
+      } catch (err) {
+        console.error('Failed to update subscription:', err);
+        this.showToast('Failed to update subscription');
+      } finally {
+        subscribeBtn.disabled = false;
+      }
+    });
+
+    card.append(avatarDiv, nameDiv, metaDiv, subscribeBtn);
+    card.addEventListener('click', () => {
+      window.location.hash = `#channel/${encodeURIComponent(ch.channel_id)}`;
+    });
+    return card;
+  },
+
+  updateSubscribeButton(button, subscribed) {
+    button.classList.toggle('active', subscribed);
+    button.textContent = subscribed ? 'Subscribed' : 'Subscribe';
+  },
+
+  formatFileSize(bytes) {
+    const size = Number(bytes) || 0;
+    if (size <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+    const value = size / Math.pow(1024, index);
+    return `${index === 0 ? value : value.toFixed(1)} ${units[index]}`;
   },
 
   // =========================================================
@@ -946,34 +1119,6 @@ const App = {
         this.renderChannelFeed();
       });
     });
-  },
-
-  // =========================================================
-  // 4. Trash View
-  // =========================================================
-  async renderTrash() {
-    this.viewTitle.textContent = 'Trash (Auto-deleted after 30 days)';
-    this.filterChips.innerHTML = '';
-    this.videoGrid.style.display = 'grid';
-    this.channelList.style.display = 'none';
-    this.videoGrid.innerHTML = '';
-    this.showEmpty(false);
-    this.showLoading(true);
-
-    try {
-      const items = await api.getTrash();
-      if (items.length === 0) {
-        this.showEmpty(true, 'Trash is empty', 'Videos moved to Trash stay here for 30 days before permanent SSD deletion.');
-      } else {
-        items.forEach((item) => {
-          this.videoGrid.appendChild(this.createTrashCard(item));
-        });
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      this.showLoading(false);
-    }
   },
 
   // =========================================================
@@ -1150,7 +1295,7 @@ const App = {
     // Position near the anchor button while keeping inside viewport
     const rect = anchorBtn.getBoundingClientRect();
     const menuWidth = 200;
-    const menuHeight = 96;
+    const menuHeight = 48;
 
     let left = rect.right - menuWidth;
     let top = rect.bottom + 4;
@@ -1170,90 +1315,7 @@ const App = {
     this.popoverCardEl = null;
   },
 
-  createTrashCard(item) {
-    const card = document.createElement('div');
-    card.className = 'video-card';
-    card.id = `trash-card-${item.video_id}`;
-
-    const thumbUrl = item.thumbnail_url || `/thumbnails/videos/${item.video_id}.jpg`;
-    const durStr = Player.formatTime(item.duration);
-
-    const trashAt = item.trashed_at || item.trash_at;
-    let daysLeft = item.days_until_deletion;
-    if (daysLeft === undefined || daysLeft === null) {
-      if (trashAt) {
-        try {
-          const trashDate = new Date(trashAt);
-          const expiryDate = new Date(trashDate.getTime() + 30 * 24 * 60 * 60 * 1000);
-          const diffMs = expiryDate - new Date();
-          daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-        } catch {
-          daysLeft = 30;
-        }
-      } else {
-        daysLeft = 30;
-      }
-    }
-
-    const expireText = daysLeft <= 0
-      ? 'Expires today'
-      : (daysLeft === 1 ? 'Expires in 1 day' : `Expires in ${daysLeft} days`);
-    const relativeTrashed = trashAt ? this.formatRelativeTime(trashAt) : 'recently';
-
-    card.innerHTML = `
-      <div class="thumbnail-box">
-        <img src="${thumbUrl}" loading="lazy" alt="${this.escapeHtml(item.title)}">
-        <span class="duration-badge">${durStr}</span>
-        <div style="position: absolute; top: 8px; left: 8px; background: rgba(255,0,0,0.85); color: #fff; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; font-weight: 600;">
-          ${expireText}
-        </div>
-      </div>
-      <div class="video-meta">
-        <div class="video-info">
-          <h3 class="video-title">${this.escapeHtml(item.title)}</h3>
-          <div class="video-subtext">${this.escapeHtml(item.channel_name)} • Trashed ${relativeTrashed}</div>
-        </div>
-      </div>
-      <div style="display: flex; gap: 8px; margin-top: 10px;">
-        <button class="chip" style="flex: 1;" id="restore-btn-${item.video_id}">Restore</button>
-        <button class="chip" style="flex: 1; border-color: var(--accent-red); color: #ff5252;" id="perm-del-btn-${item.video_id}">Delete Permanently</button>
-      </div>
-    `;
-
-    card.querySelector(`#restore-btn-${item.video_id}`).addEventListener('click', async () => {
-      await api.restoreFromTrash(item.video_id);
-      card.remove();
-      this.showToast('Restored video from Trash');
-      this.updateStats();
-    });
-
-    let confirmPending = false;
-    const delBtn = card.querySelector(`#perm-del-btn-${item.video_id}`);
-    delBtn.addEventListener('click', async () => {
-      if (!confirmPending) {
-        confirmPending = true;
-        delBtn.textContent = 'Tap again to confirm SSD delete';
-        delBtn.style.background = 'rgba(255, 0, 0, 0.25)';
-        setTimeout(() => {
-          confirmPending = false;
-          if (delBtn.isConnected) {
-            delBtn.textContent = 'Delete Permanently';
-            delBtn.style.background = '';
-          }
-        }, 3500);
-        return;
-      }
-      await api.deletePermanently(item.video_id);
-      card.remove();
-      this.showToast('Permanently deleted from SSD');
-      this.updateStats();
-    });
-
-    return card;
-  },
-
-  showToast(message) {
-    if (!this.toastEl) return;
+  showToast(message) {    if (!this.toastEl) return;
     this.toastEl.textContent = message;
     this.toastEl.classList.add('show');
     if (this.toastTimeout) clearTimeout(this.toastTimeout);
@@ -1576,10 +1638,6 @@ const App = {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                 <span id="movie-watched-btn-label">${isWatched ? 'Mark as Unwatched' : 'Mark as Watched'}</span>
               </button>
-              <button class="btn-details-action danger" id="movie-trash-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                <span>Trash</span>
-              </button>
             </div>
           </div>
         </div>
@@ -1606,13 +1664,6 @@ const App = {
           this.showToast('Marked as watched');
         }
         this.updateStats();
-      });
-
-      document.getElementById('movie-trash-btn').addEventListener('click', async () => {
-        await api.moveToTrash(movie.movie_id);
-        this.showToast('Moved movie to Trash');
-        this.updateStats();
-        window.location.hash = '#movies';
       });
 
       // Recommendations / More Like This
@@ -1802,10 +1853,6 @@ const App = {
                   <span>${this.escapeHtml(playBtnText)}</span>
                 </button>
               ` : ''}
-              <button class="btn-details-action danger" id="show-trash-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                <span>Trash Series</span>
-              </button>
             </div>
           </div>
         </div>
@@ -1817,13 +1864,6 @@ const App = {
           window.location.hash = `#watch/${encodeURIComponent(nextEp.episode_id)}`;
         });
       }
-
-      document.getElementById('show-trash-btn').addEventListener('click', async () => {
-        await api.moveToTrash(show.show_id);
-        this.showToast('Moved series to Trash');
-        this.updateStats();
-        window.location.hash = '#shows';
-      });
 
       // Season Tabs and Episodes Grid
       bodyEl.innerHTML = `

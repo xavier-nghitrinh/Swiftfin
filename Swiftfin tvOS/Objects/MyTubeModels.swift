@@ -184,16 +184,20 @@ struct MyTubeChannel: Identifiable, Hashable, Codable, Sendable {
     let channelId: String
     let name: String
     let thumbnailUrl: String?
+    let subscribed: Bool
     let totalVideos: Int
     let unwatchedCount: Int
+    let totalSizeBytes: Int64
     let latestUploadDate: String?
 
     enum CodingKeys: String, CodingKey {
         case channelId = "channel_id"
         case name
         case thumbnailUrl = "thumbnail_url"
+        case subscribed
         case totalVideos = "total_videos"
         case unwatchedCount = "unwatched_count"
+        case totalSizeBytes = "total_size_bytes"
         case latestUploadDate = "latest_upload_date"
     }
 
@@ -202,9 +206,48 @@ struct MyTubeChannel: Identifiable, Hashable, Codable, Sendable {
         channelId = try container.decode(String.self, forKey: .channelId)
         name = (try? container.decode(String.self, forKey: .name)) ?? "Unknown Channel"
         thumbnailUrl = try container.decodeIfPresent(String.self, forKey: .thumbnailUrl)
+        subscribed = (try? container.decode(Bool.self, forKey: .subscribed)) ?? false
         totalVideos = (try? container.decode(Int.self, forKey: .totalVideos)) ?? 0
         unwatchedCount = (try? container.decode(Int.self, forKey: .unwatchedCount)) ?? 0
+        totalSizeBytes = (try? container.decode(Int64.self, forKey: .totalSizeBytes)) ?? 0
         latestUploadDate = try container.decodeIfPresent(String.self, forKey: .latestUploadDate)
+    }
+
+    var formattedSize: String {
+        ByteCountFormatter.string(fromByteCount: totalSizeBytes, countStyle: .file)
+    }
+}
+
+enum MyTubeChannelSubscriptionFilter: String, CaseIterable, Identifiable {
+
+    case all
+    case subscribed
+    case unsubscribed
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all:
+            return "All"
+        case .subscribed:
+            return "Subscribed"
+        case .unsubscribed:
+            return "Unsubscribed"
+        }
+    }
+}
+
+// MARK: - User
+
+struct MyTubeUser: Codable, Sendable {
+
+    let userId: String
+    let name: String
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case name
     }
 }
 
@@ -661,57 +704,6 @@ struct MyTubeSeason: Identifiable, Hashable, Codable, Sendable {
         case seasonNumber = "season_number"
         case seasonName = "season_name"
         case episodes
-    }
-}
-
-// MARK: - Trash Item
-
-struct MyTubeTrashItem: Identifiable, Hashable, Codable, Sendable {
-
-    var id: String { videoId }
-
-    let videoId: String
-    let channelId: String?
-    let channelName: String?
-    let title: String
-    let uploadDate: String?
-    let duration: Double
-    let thumbnailUrl: String?
-    let trashAt: String?
-    let mediaType: String?
-    let daysUntilDeletion: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case videoId = "video_id"
-        case channelId = "channel_id"
-        case channelName = "channel_name"
-        case title
-        case uploadDate = "upload_date"
-        case duration
-        case thumbnailUrl = "thumbnail_url"
-        case trashAt = "trash_at"
-        case mediaType = "media_type"
-        case daysUntilDeletion = "days_until_deletion"
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        videoId = try container.decode(String.self, forKey: .videoId)
-        channelId = try container.decodeIfPresent(String.self, forKey: .channelId)
-        channelName = try container.decodeIfPresent(String.self, forKey: .channelName)
-        title = (try? container.decode(String.self, forKey: .title)) ?? "Untitled Item"
-        uploadDate = try container.decodeIfPresent(String.self, forKey: .uploadDate)
-
-        if let d = try? container.decode(Double.self, forKey: .duration) {
-            duration = d
-        } else {
-            duration = 0
-        }
-
-        thumbnailUrl = try container.decodeIfPresent(String.self, forKey: .thumbnailUrl)
-        trashAt = try container.decodeIfPresent(String.self, forKey: .trashAt)
-        mediaType = try container.decodeIfPresent(String.self, forKey: .mediaType)
-        daysUntilDeletion = try container.decodeIfPresent(Int.self, forKey: .daysUntilDeletion)
     }
 }
 

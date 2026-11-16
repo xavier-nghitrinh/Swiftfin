@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,11 +8,18 @@ from backend.config import DB_PATH
 
 logger = logging.getLogger("mytube.database")
 
+def _table_exists(cursor, table_name: str) -> bool:
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table_name,))
+    return cursor.fetchone() is not None
+
 def init_db():
     logger.info("Initializing SQLite database at: %s", DB_PATH)
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     with get_db() as conn:
         cursor = conn.cursor()
+        # One transaction so schema creation and the multi-user migration are all-or-nothing
+        cursor.execute("BEGIN")
+        users_existed = _table_exists(cursor, "users")
         
         # Channels table
         cursor.execute("""
@@ -43,6 +51,7 @@ def init_db():
                 file_status TEXT DEFAULT 'available',
                 trash_at TEXT,
                 audio_meta TEXT DEFAULT '',
+                file_size_bytes INTEGER,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
@@ -52,20 +61,44 @@ def init_db():
             cursor.execute("ALTER TABLE videos ADD COLUMN audio_meta TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+        try:
+            cursor.execute("ALTER TABLE videos ADD COLUMN file_size_bytes INTEGER")
+        except sqlite3.OperationalError:
+            pass
         
         # Indexes for fast querying
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_videos_watched_upload ON videos (watched, upload_date DESC)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_videos_channel ON videos (channel_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_videos_jellyfin ON videos (jellyfin_item_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_videos_status ON videos (file_status)")
-        
-        # Playback sessions table
+
+        # Multi-user tables
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS playback_sessions (
-                video_id TEXT PRIMARY KEY,
-                position_seconds REAL DEFAULT 0,
-                duration_seconds REAL DEFAULT 0,
-                updated_at TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_name ON users (lower(name))")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_subscriptions (
+                user_id TEXT,
+                channel_id TEXT,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, channel_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_progress (
+                user_id TEXT,
+                media_id TEXT,
+                media_type TEXT,
+                watched INTEGER DEFAULT 0,
+                watched_at TEXT,
+                playback_position REAL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, media_id)
             )
         """)
 
@@ -155,7 +188,46 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_jellyfin ON episodes (jellyfin_item_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes (file_status)")
 
+        if not users_existed:
+            _migrate_to_multi_user(cursor)
+
         conn.commit()
+
+def _migrate_to_multi_user(cursor):
+    """Seed the legacy single-user state into the 'xavier' user and restore trash items."""
+    now = now_iso()
+    xavier_id = uuid.uuid4().hex
+    cursor.execute(
+        "INSERT INTO users (user_id, name, created_at) VALUES (?, 'xavier', ?)",
+        (xavier_id, now),
+    )
+    cursor.execute("""
+        INSERT INTO user_progress (user_id, media_id, media_type, watched, watched_at, playback_position, updated_at)
+        SELECT ?, video_id, 'youtube', watched, watched_at, playback_position, updated_at
+        FROM videos
+        WHERE watched = 1 OR playback_position > 0
+    """, (xavier_id,))
+    cursor.execute("""
+        INSERT INTO user_progress (user_id, media_id, media_type, watched, watched_at, playback_position, updated_at)
+        SELECT ?, movie_id, 'movie', watched, watched_at, playback_position, updated_at
+        FROM movies
+        WHERE watched = 1 OR playback_position > 0
+    """, (xavier_id,))
+    cursor.execute("""
+        INSERT INTO user_progress (user_id, media_id, media_type, watched, watched_at, playback_position, updated_at)
+        SELECT ?, episode_id, 'episode', watched, watched_at, playback_position, updated_at
+        FROM episodes
+        WHERE watched = 1 OR playback_position > 0
+    """, (xavier_id,))
+    cursor.execute("""
+        INSERT INTO user_subscriptions (user_id, channel_id, created_at)
+        SELECT ?, channel_id, ? FROM channels
+    """, (xavier_id, now))
+    for table in ("videos", "movies", "shows", "episodes"):
+        cursor.execute(
+            f"UPDATE {table} SET file_status = 'available', trash_at = NULL WHERE file_status = 'trash'"
+        )
+    logger.info("Multi-user migration complete: created user 'xavier' with legacy progress and channel subscriptions.")
 
 @contextmanager
 def get_db():

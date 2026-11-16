@@ -6,6 +6,7 @@ from backend.config import (
 )
 from backend.database import get_db, now_iso, find_media_item
 from backend.jellyfin_client import jellyfin
+from backend.user_service import UserService
 
 logger = logging.getLogger("mytube.playback")
 
@@ -13,15 +14,17 @@ class PlaybackService:
     @staticmethod
     def get_playback_data(
         video_id: str,
+        user_id: str,
         audio_stream_index: Optional[int] = None,
         quality: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
-        """Retrieve stream URL, quality choices, tracks, and resume state for client playback across YouTube, Movies, and Episodes."""
+        """Retrieve stream URL, quality choices, tracks, and the user's resume state for client playback across YouTube, Movies, and Episodes."""
         with get_db() as conn:
             cursor = conn.cursor()
             media, media_type = find_media_item(cursor, video_id)
             if not media:
                 return None
+            progress = UserService.progress_fields(UserService.get_progress(cursor, user_id, video_id))
 
         item_id = media["jellyfin_item_id"]
         audio_meta_labels: List[str] = []
@@ -189,8 +192,8 @@ class PlaybackService:
             "channel_name": channel_name,
             "channel_thumbnail_url": media.get("channel_thumbnail_url") or "",
             "duration": media["duration"],
-            "playback_position": media["playback_position"],
-            "watched": bool(media["watched"]),
+            "playback_position": progress["playback_position"],
+            "watched": bool(progress["watched"]),
             "thumbnail_url": thumb,
             "stream_url": stream_url,
             "audio_only_url": audio_only_url,
@@ -221,8 +224,8 @@ class PlaybackService:
             return None
 
     @staticmethod
-    def update_progress(video_id: str, position_seconds: float, duration_seconds: float) -> Dict[str, Any]:
-        """Update playback position and auto-mark watched (>95% for movies/shows, <30s or >=98% for youtube)."""
+    def update_progress(video_id: str, user_id: str, position_seconds: float, duration_seconds: float) -> Dict[str, Any]:
+        """Update the user's playback position and auto-mark watched (>95% for movies/shows, <30s or >=98% for youtube)."""
         now = now_iso()
         remaining_seconds = duration_seconds - position_seconds if duration_seconds > 0 else 999.0
         
@@ -233,7 +236,7 @@ class PlaybackService:
                 return {"status": "error", "message": "Media item not found"}
                 
             item_id = media["jellyfin_item_id"]
-            already_watched = bool(media["watched"])
+            already_watched = bool(UserService.progress_fields(UserService.get_progress(cursor, user_id, video_id))["watched"])
 
             # Rule: > 95% duration for movies and shows; < 30s remaining or >= 98% for YouTube
             if media_type in ("movie", "episode"):
@@ -244,43 +247,16 @@ class PlaybackService:
                     or (duration_seconds > 0 and position_seconds >= duration_seconds * 0.98)
                 )
 
-            # Update the appropriate table
-            if media_type == "movie":
-                table_name = "movies"
-                id_col = "movie_id"
-            elif media_type == "episode":
-                table_name = "episodes"
-                id_col = "episode_id"
-            else:
-                table_name = "videos"
-                id_col = "video_id"
-
-            if should_mark_watched:
-                cursor.execute(f"""
-                    UPDATE {table_name} 
-                    SET watched = 1, 
-                        watched_at = COALESCE(watched_at, ?), 
-                        playback_position = ?, 
-                        updated_at = ?
-                    WHERE {id_col} = ?
-                """, (now, position_seconds, now, video_id))
-            else:
-                cursor.execute(f"""
-                    UPDATE {table_name} 
-                    SET playback_position = ?, 
-                        updated_at = ?
-                    WHERE {id_col} = ?
-                """, (position_seconds, now, video_id))
-                
+            watched = should_mark_watched or already_watched
             cursor.execute("""
-                INSERT INTO playback_sessions (video_id, position_seconds, duration_seconds, updated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(video_id) DO UPDATE SET
-                    position_seconds = excluded.position_seconds,
-                    duration_seconds = excluded.duration_seconds,
+                INSERT INTO user_progress (user_id, media_id, media_type, watched, watched_at, playback_position, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, media_id) DO UPDATE SET
+                    watched = excluded.watched,
+                    watched_at = COALESCE(user_progress.watched_at, excluded.watched_at),
+                    playback_position = excluded.playback_position,
                     updated_at = excluded.updated_at
-            """, (video_id, position_seconds, duration_seconds, now))
-            
+            """, (user_id, video_id, media_type, int(watched), now if watched else None, position_seconds, now))
             conn.commit()
 
         if should_mark_watched and not already_watched:
@@ -289,9 +265,10 @@ class PlaybackService:
         return {
             "status": "ok",
             "video_id": video_id,
+            "user_id": user_id,
             "media_type": media_type,
             "position_seconds": position_seconds,
-            "watched": should_mark_watched or already_watched,
+            "watched": watched,
             "remaining_seconds": remaining_seconds
         }
 
@@ -308,7 +285,7 @@ class PlaybackService:
         jellyfin.report_progress(item_id, int(position_seconds * 10000000))
 
     @staticmethod
-    def mark_watched(video_id: str) -> bool:
+    def mark_watched(video_id: str, user_id: str) -> bool:
         now = now_iso()
         with get_db() as conn:
             cursor = conn.cursor()
@@ -317,19 +294,21 @@ class PlaybackService:
                 return False
             item_id = media["jellyfin_item_id"]
 
-            if media_type == "movie":
-                cursor.execute("UPDATE movies SET watched = 1, watched_at = ?, updated_at = ? WHERE movie_id = ?", (now, now, video_id))
-            elif media_type == "episode":
-                cursor.execute("UPDATE episodes SET watched = 1, watched_at = ?, updated_at = ? WHERE episode_id = ?", (now, now, video_id))
-            else:
-                cursor.execute("UPDATE videos SET watched = 1, watched_at = ?, updated_at = ? WHERE video_id = ?", (now, now, video_id))
+            cursor.execute("""
+                INSERT INTO user_progress (user_id, media_id, media_type, watched, watched_at, playback_position, updated_at)
+                VALUES (?, ?, ?, 1, ?, 0, ?)
+                ON CONFLICT(user_id, media_id) DO UPDATE SET
+                    watched = 1,
+                    watched_at = excluded.watched_at,
+                    updated_at = excluded.updated_at
+            """, (user_id, video_id, media_type, now, now))
             conn.commit()
             
         jellyfin.mark_played(item_id)
         return True
 
     @staticmethod
-    def mark_unwatched(video_id: str) -> bool:
+    def mark_unwatched(video_id: str, user_id: str) -> bool:
         now = now_iso()
         with get_db() as conn:
             cursor = conn.cursor()
@@ -338,13 +317,15 @@ class PlaybackService:
                 return False
             item_id = media["jellyfin_item_id"]
 
-            if media_type == "movie":
-                cursor.execute("UPDATE movies SET watched = 0, watched_at = NULL, playback_position = 0, updated_at = ? WHERE movie_id = ?", (now, video_id))
-            elif media_type == "episode":
-                cursor.execute("UPDATE episodes SET watched = 0, watched_at = NULL, playback_position = 0, updated_at = ? WHERE episode_id = ?", (now, video_id))
-            else:
-                cursor.execute("UPDATE videos SET watched = 0, watched_at = NULL, playback_position = 0, updated_at = ? WHERE video_id = ?", (now, video_id))
-            cursor.execute("DELETE FROM playback_sessions WHERE video_id = ?", (video_id,))
+            cursor.execute("""
+                INSERT INTO user_progress (user_id, media_id, media_type, watched, watched_at, playback_position, updated_at)
+                VALUES (?, ?, ?, 0, NULL, 0, ?)
+                ON CONFLICT(user_id, media_id) DO UPDATE SET
+                    watched = 0,
+                    watched_at = NULL,
+                    playback_position = 0,
+                    updated_at = excluded.updated_at
+            """, (user_id, video_id, media_type, now))
             conn.commit()
             
         jellyfin.mark_unplayed(item_id)

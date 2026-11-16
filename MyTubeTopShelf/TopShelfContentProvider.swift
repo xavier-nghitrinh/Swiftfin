@@ -34,6 +34,8 @@ final class TopShelfContentProvider: TVTopShelfContentProvider {
 
     override func loadTopShelfContent(completionHandler: @escaping ((any TVTopShelfContent)?) -> Void) {
         guard let defaults = UserDefaults(suiteName: "group.org.jellyfin.swiftfin"),
+              let userId = defaults.string(forKey: "mytube.user-id"),
+              !userId.isEmpty,
               let data = defaults.data(forKey: "mytube.continue-watching"),
               let entries = try? JSONDecoder().decode([Entry].self, from: data),
               !entries.isEmpty else {

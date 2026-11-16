@@ -3,27 +3,106 @@
  * Wraps REST calls to /api endpoints
  */
 const API_BASE = '/api';
+const USER_ID_KEY = 'mytube.userId';
+const USER_NAME_KEY = 'mytube.userName';
 
 const api = {
+  getUserId() {
+    return localStorage.getItem(USER_ID_KEY);
+  },
+
+  getUserName() {
+    return localStorage.getItem(USER_NAME_KEY);
+  },
+
+  setUser(user) {
+    localStorage.setItem(USER_ID_KEY, user.user_id);
+    localStorage.setItem(USER_NAME_KEY, user.name);
+  },
+
+  clearUser() {
+    localStorage.removeItem(USER_ID_KEY);
+    localStorage.removeItem(USER_NAME_KEY);
+  },
+
+  /**
+   * Sends X-MyTube-User on every /api request except /api/users*.
+   * A 400/404 whose detail mentions the user means the stored user is invalid,
+   * so 'mytube:user-invalid' is dispatched to return to user selection.
+   */
+  async request(path, options = {}) {
+    const isUsersRoute = path.startsWith(`${API_BASE}/users`);
+    const headers = new Headers(options.headers || {});
+    const userId = this.getUserId();
+    if (!isUsersRoute && userId) {
+      headers.set('X-MyTube-User', userId);
+    }
+
+    const res = await fetch(path, { ...options, headers });
+
+    if (!isUsersRoute && (res.status === 400 || res.status === 404)) {
+      const body = await res.clone().json().catch(() => null);
+      if (body && typeof body.detail === 'string' && /user/i.test(body.detail)) {
+        window.dispatchEvent(new CustomEvent('mytube:user-invalid'));
+      }
+    }
+    return res;
+  },
+
+  async getUsers() {
+    const res = await this.request(`${API_BASE}/users`);
+    if (!res.ok) throw new Error(`Failed to fetch users: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async createUser(name) {
+    const res = await this.request(`${API_BASE}/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(typeof body.detail === 'string' ? body.detail : `Failed to create user: ${res.statusText}`);
+    }
+    return body;
+  },
+
+  async deleteUser(userId) {
+    const res = await this.request(`${API_BASE}/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`Failed to delete user: ${res.statusText}`);
+  },
+
+  async setChannelSubscription(channelId, subscribed) {
+    const res = await this.request(`${API_BASE}/channels/${encodeURIComponent(channelId)}/subscription`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscribed })
+    });
+    if (!res.ok) throw new Error(`Failed to update subscription: ${res.statusText}`);
+    return await res.json();
+  },
+
   async getHomeFeed(limit = 50, offset = 0, unplayedOnly = true) {
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
       unplayed_only: unplayedOnly ? 'true' : 'false'
     });
-    const res = await fetch(`${API_BASE}/home?${params}`);
+    const res = await this.request(`${API_BASE}/home?${params}`);
     if (!res.ok) throw new Error(`Failed to fetch home feed: ${res.statusText}`);
     return await res.json();
   },
 
-  async getChannels() {
-    const res = await fetch(`${API_BASE}/channels`);
+  async getChannels(subscription = 'all') {
+    const params = new URLSearchParams({ subscription });
+    const res = await this.request(`${API_BASE}/channels?${params}`);
     if (!res.ok) throw new Error(`Failed to fetch channels: ${res.statusText}`);
     return await res.json();
   },
 
   async getChannelDetail(channelId) {
-    const res = await fetch(`${API_BASE}/channels/${encodeURIComponent(channelId)}`);
+    const res = await this.request(`${API_BASE}/channels/${encodeURIComponent(channelId)}`);
     if (!res.ok) throw new Error(`Failed to fetch channel details: ${res.statusText}`);
     return await res.json();
   },
@@ -34,7 +113,7 @@ const api = {
       limit: limit.toString(),
       offset: offset.toString()
     });
-    const res = await fetch(`${API_BASE}/channels/${encodeURIComponent(channelId)}/videos?${params}`);
+    const res = await this.request(`${API_BASE}/channels/${encodeURIComponent(channelId)}/videos?${params}`);
     if (!res.ok) throw new Error(`Failed to fetch channel videos: ${res.statusText}`);
     return await res.json();
   },
@@ -49,14 +128,14 @@ const api = {
     }
     const qStr = params.toString();
     const url = `${API_BASE}/videos/${encodeURIComponent(videoId)}/playback${qStr ? '?' + qStr : ''}`;
-    const res = await fetch(url);
+    const res = await this.request(url);
     if (!res.ok) throw new Error(`Failed to fetch playback info: ${res.statusText}`);
     return await res.json();
   },
 
   async reportProgress(videoId, position, duration, syncToJellyfin = false) {
     try {
-      const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/progress`, {
+      const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ position, duration, sync_to_jellyfin: syncToJellyfin }),
@@ -70,89 +149,64 @@ const api = {
   },
 
   async markWatched(videoId) {
-    const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/watched`, {
+    const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/watched`, {
       method: 'POST'
     });
     return await res.json();
   },
 
   async markUnwatched(videoId) {
-    const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/unwatched`, {
-      method: 'POST'
-    });
-    return await res.json();
-  },
-
-  async moveToTrash(videoId) {
-    const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/trash`, {
-      method: 'POST'
-    });
-    return await res.json();
-  },
-
-  async restoreFromTrash(videoId) {
-    const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}/restore`, {
+    const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/unwatched`, {
       method: 'POST'
     });
     return await res.json();
   },
 
   async deletePermanently(videoId) {
-    const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(videoId)}`, {
+    const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}`, {
       method: 'DELETE'
     });
     return await res.json();
   },
 
-  async getTrash() {
-    const res = await fetch(`${API_BASE}/trash`);
-    if (!res.ok) throw new Error(`Failed to fetch trash: ${res.statusText}`);
-    return await res.json();
-  },
-
   async search(query) {
-    const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
+    const res = await this.request(`${API_BASE}/search?q=${encodeURIComponent(query)}`);
     if (!res.ok) throw new Error(`Search failed: ${res.statusText}`);
     return await res.json();
   },
 
   async getMoviesHome() {
-    const res = await fetch(`${API_BASE}/movies/home`);
+    const res = await this.request(`${API_BASE}/movies/home`);
     if (!res.ok) throw new Error(`Failed to fetch movies home: ${res.statusText}`);
     return await res.json();
   },
 
   async getMovieDetail(movieId) {
-    const res = await fetch(`${API_BASE}/movies/${encodeURIComponent(movieId)}`);
+    const res = await this.request(`${API_BASE}/movies/${encodeURIComponent(movieId)}`);
     if (!res.ok) throw new Error(`Failed to fetch movie detail: ${res.statusText}`);
     return await res.json();
   },
 
   async getShowsHome() {
-    const res = await fetch(`${API_BASE}/shows/home`);
+    const res = await this.request(`${API_BASE}/shows/home`);
     if (!res.ok) throw new Error(`Failed to fetch shows home: ${res.statusText}`);
     return await res.json();
   },
 
   async getShowDetail(showId) {
-    const res = await fetch(`${API_BASE}/shows/${encodeURIComponent(showId)}`);
+    const res = await this.request(`${API_BASE}/shows/${encodeURIComponent(showId)}`);
     if (!res.ok) throw new Error(`Failed to fetch show detail: ${res.statusText}`);
     return await res.json();
   },
 
   async getStats() {
-    const res = await fetch(`${API_BASE}/stats`);
+    const res = await this.request(`${API_BASE}/stats`);
     if (!res.ok) throw new Error(`Failed to fetch stats: ${res.statusText}`);
     return await res.json();
   },
 
   async triggerScan() {
-    const res = await fetch(`${API_BASE}/admin/scan`, { method: 'POST' });
-    return await res.json();
-  },
-
-  async triggerCleanup() {
-    const res = await fetch(`${API_BASE}/admin/cleanup`, { method: 'POST' });
+    const res = await this.request(`${API_BASE}/admin/scan`, { method: 'POST' });
     return await res.json();
   }
 };

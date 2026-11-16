@@ -3,13 +3,22 @@ import logging
 import re
 import json
 import os
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 from backend.config import REMOTE_MEDIA_DIR
 from backend.database import get_db, now_iso
 from backend.jellyfin_client import jellyfin
 
 logger = logging.getLogger("mytube.scanner")
+
+def get_file_size(file_path: str) -> Optional[int]:
+    """Size in bytes of a local video file, or None when the path is not accessible."""
+    if file_path and os.path.isfile(file_path):
+        try:
+            return os.path.getsize(file_path)
+        except OSError:
+            return None
+    return None
 
 def parse_audio_labels_from_meta(format_str: str, lang_str: str) -> List[str]:
     """Extract human-readable audio track labels from yt-dlp format & language strings."""
@@ -193,7 +202,7 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
         cursor.execute("""
             SELECT video_id, channel_id, channel_name, title, description,
                    upload_date, duration, file_path, thumbnail_url, jellyfin_item_id,
-                   watched, watched_at, playback_position, file_status, trash_at, audio_meta
+                   file_status, audio_meta, file_size_bytes
             FROM videos
         """)
         existing_rows = cursor.fetchall()
@@ -213,9 +222,6 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
             file_path = item.get("Path", "")
             premiere_date = item.get("PremiereDate", "")
             overview = item.get("Overview", "")
-            user_data = item.get("UserData", {})
-            jellyfin_played = 1 if user_data.get("Played", False) else 0
-            jellyfin_pos = user_data.get("PlaybackPositionTicks", 0) / 10000000.0
             duration = item.get("RunTimeTicks", 0) / 10000000.0
             
             channel_folder = extract_channel_folder_from_path(file_path)
@@ -229,34 +235,22 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
                 channel_id = existing["channel_id"]
                 channel_name = existing["channel_name"]
 
-                final_watched = existing["watched"]
-                watched_at = existing["watched_at"]
-                if jellyfin_played == 1 and final_watched == 0:
-                    final_watched = 1
-                    watched_at = now
-
-                playback_pos = existing["playback_position"]
-                if jellyfin_pos > playback_pos:
-                    playback_pos = jellyfin_pos
-
                 # Check if thumbnail is cached
                 existing_vid_thumb = existing["thumbnail_url"] or ""
                 if not existing_vid_thumb.startswith("data:image/"):
                     remote_video_thumb = (file_path[:-4] if file_path.endswith(".mkv") else file_path) + "-thumb.jpg"
                     video_thumb_tasks.append((video_id, remote_video_thumb, item_id))
 
-                # Update playback / watch status if changed
-                needs_update = (
-                    final_watched != existing["watched"] or
-                    abs(playback_pos - existing["playback_position"]) > 1.0 or
-                    item_id != existing["jellyfin_item_id"]
-                )
-                if needs_update:
+                # Refresh the Jellyfin item id and fill in file size when it was never recorded
+                file_size = existing["file_size_bytes"]
+                if file_size is None:
+                    file_size = get_file_size(file_path)
+                if item_id != existing["jellyfin_item_id"] or file_size != existing["file_size_bytes"]:
                     cursor.execute("""
                         UPDATE videos
-                        SET watched = ?, watched_at = ?, playback_position = ?, jellyfin_item_id = ?, updated_at = ?
+                        SET jellyfin_item_id = ?, file_size_bytes = ?, updated_at = ?
                         WHERE video_id = ?
-                    """, (final_watched, watched_at, playback_pos, item_id, now, video_id))
+                    """, (item_id, file_size, now, video_id))
                     updated_videos += 1
 
                 synced_videos += 1
@@ -302,21 +296,11 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
 
                 # Check if video_id already exists (e.g. file was moved or path updated)
                 prev_vid = existing_by_id.get(video_id) or existing
-                final_watched = jellyfin_played
-                watched_at = now if jellyfin_played else None
-                playback_pos = jellyfin_pos
                 file_status = 'available'
-                trash_at = None
                 existing_vid_thumb = ""
 
                 if prev_vid:
-                    if prev_vid["watched"] == 1:
-                        final_watched = 1
-                        watched_at = prev_vid["watched_at"]
-                    if prev_vid["playback_position"] > playback_pos:
-                        playback_pos = prev_vid["playback_position"]
                     file_status = prev_vid["file_status"]
-                    trash_at = prev_vid["trash_at"]
                     existing_vid_thumb = prev_vid["thumbnail_url"] or ""
 
                 has_b64_vid_thumb = existing_vid_thumb.startswith("data:image/")
@@ -328,9 +312,8 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
                     INSERT INTO videos (
                         video_id, channel_id, channel_name, title, description,
                         upload_date, duration, file_path, thumbnail_url, jellyfin_item_id,
-                        watched, watched_at, playback_position, file_status, trash_at,
-                        audio_meta, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        file_status, audio_meta, file_size_bytes, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(video_id) DO UPDATE SET
                         channel_id = excluded.channel_id,
                         channel_name = excluded.channel_name,
@@ -340,18 +323,14 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
                         duration = excluded.duration,
                         file_path = excluded.file_path,
                         jellyfin_item_id = excluded.jellyfin_item_id,
-                        watched = excluded.watched,
-                        watched_at = excluded.watched_at,
-                        playback_position = excluded.playback_position,
                         file_status = excluded.file_status,
-                        trash_at = excluded.trash_at,
                         audio_meta = excluded.audio_meta,
+                        file_size_bytes = COALESCE(excluded.file_size_bytes, videos.file_size_bytes),
                         updated_at = excluded.updated_at
                 """, (
                     video_id, channel_id, channel_name, title, meta.get("description", overview),
                     iso_upload_date, duration, file_path, existing_vid_thumb if has_b64_vid_thumb else "", item_id,
-                    final_watched, watched_at, playback_pos, file_status, trash_at,
-                    audio_meta_json, now, now
+                    file_status, audio_meta_json, get_file_size(file_path), now, now
                 ))
                 new_videos += 1
                 synced_videos += 1
@@ -429,7 +408,7 @@ def sync_movies() -> Dict[str, Any]:
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT movie_id, watched, watched_at, playback_position, file_status, trash_at, poster_url, backdrop_url FROM movies")
+        cursor.execute("SELECT movie_id, file_status, poster_url, backdrop_url FROM movies")
         existing_movies = {row["movie_id"]: dict(row) for row in cursor.fetchall()}
 
         for item in items:
@@ -445,27 +424,13 @@ def sync_movies() -> Dict[str, Any]:
             community_rating = round(float(item.get("CommunityRating") or 0), 1)
             file_path = item.get("Path") or ""
 
-            user_data = item.get("UserData") or {}
-            jf_played = 1 if user_data.get("Played") else 0
-            jf_pos = round((user_data.get("PlaybackPositionTicks") or 0) / 10000000.0, 2)
-
             prev = existing_movies.get(movie_id)
-            final_watched = jf_played
-            watched_at = now if jf_played else None
-            playback_pos = jf_pos
             file_status = "available"
-            trash_at = None
             poster_url = ""
             backdrop_url = ""
 
             if prev:
-                if prev["watched"] == 1:
-                    final_watched = 1
-                    watched_at = prev["watched_at"]
-                if prev["playback_position"] > playback_pos:
-                    playback_pos = prev["playback_position"]
                 file_status = prev["file_status"]
-                trash_at = prev["trash_at"]
                 poster_url = prev["poster_url"] or ""
                 backdrop_url = prev["backdrop_url"] or ""
             else:
@@ -480,9 +445,8 @@ def sync_movies() -> Dict[str, Any]:
                     movie_id, title, overview, release_year, premiere_date,
                     duration, genres, official_rating, community_rating,
                     poster_url, backdrop_url, file_path, jellyfin_item_id,
-                    watched, watched_at, playback_position, file_status, trash_at,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    file_status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(movie_id) DO UPDATE SET
                     title = excluded.title,
                     overview = excluded.overview,
@@ -496,18 +460,13 @@ def sync_movies() -> Dict[str, Any]:
                     backdrop_url = CASE WHEN movies.backdrop_url LIKE 'data:image/%' THEN movies.backdrop_url ELSE excluded.backdrop_url END,
                     file_path = excluded.file_path,
                     jellyfin_item_id = excluded.jellyfin_item_id,
-                    watched = excluded.watched,
-                    watched_at = excluded.watched_at,
-                    playback_position = excluded.playback_position,
                     file_status = excluded.file_status,
-                    trash_at = excluded.trash_at,
                     updated_at = excluded.updated_at
             """, (
                 movie_id, title, overview, release_year, premiere_date,
                 duration, genres, official_rating, community_rating,
                 poster_url, backdrop_url, file_path, movie_id,
-                final_watched, watched_at, playback_pos, file_status, trash_at,
-                now, now
+                file_status, now, now
             ))
             synced += 1
 
@@ -558,7 +517,7 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT show_id, poster_url, backdrop_url, file_status, trash_at FROM shows")
+        cursor.execute("SELECT show_id, poster_url, backdrop_url, file_status FROM shows")
         existing_shows = {row["show_id"]: dict(row) for row in cursor.fetchall()}
 
         for item in show_items:
@@ -574,13 +533,11 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
 
             prev = existing_shows.get(show_id)
             file_status = "available"
-            trash_at = None
             poster_url = ""
             backdrop_url = ""
 
             if prev:
                 file_status = prev["file_status"]
-                trash_at = prev["trash_at"]
                 poster_url = prev["poster_url"] or ""
                 backdrop_url = prev["backdrop_url"] or ""
             else:
@@ -593,8 +550,8 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
                 INSERT INTO shows (
                     show_id, title, overview, start_year, status, genres,
                     official_rating, community_rating, poster_url, backdrop_url,
-                    file_path, jellyfin_item_id, file_status, trash_at, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    file_path, jellyfin_item_id, file_status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(show_id) DO UPDATE SET
                     title = excluded.title,
                     overview = excluded.overview,
@@ -608,12 +565,11 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
                     file_path = excluded.file_path,
                     jellyfin_item_id = excluded.jellyfin_item_id,
                     file_status = excluded.file_status,
-                    trash_at = excluded.trash_at,
                     updated_at = excluded.updated_at
             """, (
                 show_id, title, overview, start_year, status, genres,
                 official_rating, community_rating, poster_url, backdrop_url,
-                file_path, show_id, file_status, trash_at, now, now
+                file_path, show_id, file_status, now, now
             ))
             synced_shows += 1
 
@@ -659,7 +615,7 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT episode_id, watched, watched_at, playback_position, file_status, trash_at, thumbnail_url FROM episodes")
+        cursor.execute("SELECT episode_id, file_status, thumbnail_url FROM episodes")
         existing_episodes = {row["episode_id"]: dict(row) for row in cursor.fetchall()}
 
         for item in episode_items:
@@ -677,26 +633,12 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
             duration = round(ticks / 10000000.0, 2)
             file_path = item.get("Path") or ""
 
-            user_data = item.get("UserData") or {}
-            jf_played = 1 if user_data.get("Played") else 0
-            jf_pos = round((user_data.get("PlaybackPositionTicks") or 0) / 10000000.0, 2)
-
             prev = existing_episodes.get(episode_id)
-            final_watched = jf_played
-            watched_at = now if jf_played else None
-            playback_pos = jf_pos
             file_status = "available"
-            trash_at = None
             thumbnail_url = ""
 
             if prev:
-                if prev["watched"] == 1:
-                    final_watched = 1
-                    watched_at = prev["watched_at"]
-                if prev["playback_position"] > playback_pos:
-                    playback_pos = prev["playback_position"]
                 file_status = prev["file_status"]
-                trash_at = prev["trash_at"]
                 thumbnail_url = prev["thumbnail_url"] or ""
             else:
                 new_episodes += 1
@@ -707,9 +649,8 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
                     episode_id, show_id, show_name, season_id, season_name,
                     season_number, episode_number, title, overview, premiere_date,
                     duration, thumbnail_url, file_path, jellyfin_item_id,
-                    watched, watched_at, playback_position, file_status, trash_at,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    file_status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(episode_id) DO UPDATE SET
                     show_id = excluded.show_id,
                     show_name = excluded.show_name,
@@ -724,18 +665,13 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
                     thumbnail_url = CASE WHEN episodes.thumbnail_url LIKE 'data:image/%' THEN episodes.thumbnail_url ELSE excluded.thumbnail_url END,
                     file_path = excluded.file_path,
                     jellyfin_item_id = excluded.jellyfin_item_id,
-                    watched = excluded.watched,
-                    watched_at = excluded.watched_at,
-                    playback_position = excluded.playback_position,
                     file_status = excluded.file_status,
-                    trash_at = excluded.trash_at,
                     updated_at = excluded.updated_at
             """, (
                 episode_id, show_id, show_name, season_id, season_name,
                 season_number, episode_number, title, overview, premiere_date,
                 duration, thumbnail_url, file_path, episode_id,
-                final_watched, watched_at, playback_pos, file_status, trash_at,
-                now, now
+                file_status, now, now
             ))
             synced_episodes += 1
 

@@ -211,7 +211,7 @@ struct MyTubeFeedView: View {
                 LazyVGrid(columns: columns, spacing: 40) {
                     ForEach(videos) { vid in
                         MyTubeVideoCard(video: vid) {
-                            // On status change (e.g. marked watched or trashed)
+                            // On status change (e.g. marked watched)
                             if unplayedOnly {
                                 videos.removeAll(where: { $0.videoId == vid.videoId })
                             }
