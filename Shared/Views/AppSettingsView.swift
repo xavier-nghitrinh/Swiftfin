@@ -147,16 +147,22 @@ struct AppSettingsView: View {
         Form(systemImage: "gearshape") {
             formContent
         }
-        #else
-        Form(image: .jellyfinBlobBlue) {
-            formContent
-        }
-        #endif
         .animation(.linear, value: selectUserUseSplashscreen)
         .animation(.linear, value: signOutOnBackground)
         .navigationTitle(L10n.advanced)
         .navigationBarCloseButton {
             router.dismiss()
         }
+        #else
+        Form(image: .jellyfinBlobBlue) {
+            formContent
+        }
+        .animation(.linear, value: selectUserUseSplashscreen)
+        .animation(.linear, value: signOutOnBackground)
+        .navigationTitle(L10n.advanced)
+        .navigationBarCloseButton {
+            router.dismiss()
+        }
+        #endif
     }
 }
