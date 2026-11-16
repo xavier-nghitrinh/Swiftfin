@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+#if os(iOS)
 import SwiftUI
 
 struct SavedFiltersView: View {
@@ -33,3 +34,4 @@ struct SavedFiltersView: View {
         .navigationTitle(L10n.savedFilters)
     }
 }
+#endif

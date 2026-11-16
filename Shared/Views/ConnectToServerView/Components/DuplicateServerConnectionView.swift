@@ -12,6 +12,9 @@ extension ConnectToServerView {
 
     struct DuplicateServerConnectionView: PresentationView {
 
+        @AppTheme
+        private var theme
+
         @Environment(\.dismiss)
         private var dismiss
 
@@ -58,7 +61,7 @@ extension ConnectToServerView {
                     .fontWeight(.semibold)
                     .backport
                     .buttonStyle(.glassProminent.shadow(false))
-                    .tint(.jellyfinPurple)
+                    .tint(theme.accentColor)
                     #if os(iOS)
                     .controlSize(.large)
                     #endif

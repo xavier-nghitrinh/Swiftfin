@@ -12,17 +12,13 @@ import SwiftUIIntrospect
 
 extension View {
 
+    /// - Important: This does nothing on tvOS.
     @ContentBuilder
     func filterBar(
         viewModel: FilterViewModel,
         types: [ItemFilterType]
     ) -> some View {
-        modifier(
-            FilterBarModifier(
-                viewModel: viewModel,
-                types: types
-            )
-        )
+        self
     }
 
     /// - Important: This does nothing on tvOS.

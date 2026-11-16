@@ -143,11 +143,6 @@ struct MainTabView: View {
                     await tabCoordinator.route(to: route)
                 }
             }
-            #if os(tvOS)
-            .background(alignment: .top) {
-                FocusedPosterCinematicBackgroundView()
-            }
-            #endif
     }
 }
 

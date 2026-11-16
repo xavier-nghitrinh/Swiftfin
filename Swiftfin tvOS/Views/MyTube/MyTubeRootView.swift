@@ -31,14 +31,10 @@ struct MyTubeRootView: View {
         case shows
         case search
         case trash
-        case swiftfin
         case settings
 
         var id: String { rawValue }
     }
-
-    @Default(.Customization.tabBarPlacement)
-    private var tabBarPlacement
 
     @State
     private var selectedTab: MyTubeTab = .subscriptions
@@ -196,14 +192,7 @@ struct MyTubeRootView: View {
                 Label("Trash", systemImage: "trash.fill")
             }
 
-            // 7. Swiftfin (Fallback to original Swiftfin home)
-            SwiftUI.Tab(value: MyTubeTab.swiftfin) {
-                MainTabView()
-            } label: {
-                Label("Swiftfin", systemImage: "square.grid.2x2")
-            }
-
-            // 8. Settings
+            // 7. Settings
             SwiftUI.Tab(value: MyTubeTab.settings) {
                 NavigationInjectionView(coordinator: settingsCoordinator) {
                     SettingsView()
@@ -215,16 +204,8 @@ struct MyTubeRootView: View {
     }
 
     var body: some View {
-        Group {
-            switch tabBarPlacement {
-            case .sidebar:
-                tabViewContent
-                    .tabViewStyle(.sidebarAdaptable)
-            case .tabBar:
-                tabViewContent
-                    .tabViewStyle(.tabBarOnly)
-            }
-        }
+        tabViewContent
+            .tabViewStyle(.tabBarOnly)
         .task {
             await refreshTopShelf()
             if let url = pendingTopShelfURL {

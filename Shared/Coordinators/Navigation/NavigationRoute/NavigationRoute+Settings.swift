@@ -38,6 +38,7 @@ extension NavigationRoute {
         }
     }
 
+    #if os(iOS)
     static func itemActionBarButtonSelector(selectedButtonsBinding: Binding<[ItemActionButton]>) -> NavigationRoute {
         NavigationRoute(id: "itemActionBarButtonSelector") {
             OrderedSectionSelectorView(selection: selectedButtonsBinding, sources: ItemActionButton.allCases)
@@ -51,6 +52,7 @@ extension NavigationRoute {
                 .navigationTitle(L10n.menuButtons.localizedCapitalized)
         }
     }
+    #endif
 
     static func supplementSelector(selectedSupplementsBinding: Binding<[VideoPlayerSupplementType]>) -> NavigationRoute {
         NavigationRoute(id: "supplementSelector") {
@@ -192,6 +194,7 @@ extension NavigationRoute {
     }
     #endif
 
+    #if os(iOS)
     static var itemSettings: NavigationRoute {
         NavigationRoute(
             id: "itemSettings"
@@ -243,6 +246,7 @@ extension NavigationRoute {
                 .navigationTitle(L10n.mediaAttributes.localizedCapitalized)
         }
     }
+    #endif
 
     static var localUserSecurity: NavigationRoute {
         NavigationRoute(

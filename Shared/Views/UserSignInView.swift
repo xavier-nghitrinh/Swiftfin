@@ -17,6 +17,9 @@ struct UserSignInView: View {
     @AdaptiveLayout
     private var viewLayout
 
+    @AppTheme
+    private var theme
+
     private enum Field: Hashable {
 
         case username
@@ -199,7 +202,7 @@ struct UserSignInView: View {
             .fontWeight(.semibold)
             .backport
             .buttonStyle(.glassProminent.shadow(false))
-            .tint(.jellyfinPurple)
+            .tint(theme.accentColor)
             #if os(iOS)
             .controlSize(.large)
             .listRowSeparator(.hidden)
@@ -227,7 +230,7 @@ struct UserSignInView: View {
                 .fontWeight(.semibold)
                 .backport
                 .buttonStyle(.glassProminent.shadow(false))
-                .tint(.jellyfinPurple)
+                .tint(theme.accentColor)
                 #if os(iOS)
                 .controlSize(.large)
                 #endif

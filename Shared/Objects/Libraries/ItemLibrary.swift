@@ -372,13 +372,7 @@ private struct ItemLibraryBody<Content: View>: View {
             )
             #endif
             .letterPickerBar(filterViewModel: filterViewModel)
-            #if os(tvOS)
-            .background(alignment: .top) {
-                if !router.isRootOfPath {
-                    FocusedPosterCinematicBackgroundView()
-                }
-            }
-            #else
+            #if !os(tvOS)
             .navigationBarFilterDrawer(
                 viewModel: filterViewModel,
                 types: filterTypes

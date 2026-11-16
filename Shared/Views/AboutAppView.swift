@@ -19,7 +19,11 @@ struct AboutAppView: View {
 
     @ContentBuilder
     var body: some View {
+        #if os(tvOS)
+        Form(systemImage: "info.circle") {
+        #else
         Form(image: .jellyfinBlobBlue) {
+        #endif
             if !viewLayout.isLarge {
                 Section {
                     VStack(alignment: .center, spacing: 10) {

@@ -129,7 +129,6 @@ struct SearchView: View {
         )
         .environmentObject(focusCoordinator)
         #if os(tvOS)
-        .modifier(SearchSafeAreaModifier())
         .onReceive(viewModel.filterViewModel.$currentFilters) { filters in
             searchQuery = filters.query ?? ""
         }

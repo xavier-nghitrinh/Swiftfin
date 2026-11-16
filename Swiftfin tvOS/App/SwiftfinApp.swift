@@ -63,9 +63,6 @@ private struct MyTubeUserSessionRootView: View {
     @InjectedObject(\.userSessionManager)
     private var userSessionManager
 
-    @Default(.Customization.Poster.configuration)
-    private var posterConfiguration
-
     @State
     private var pendingTopShelfURL: URL?
 
@@ -82,7 +79,6 @@ private struct MyTubeUserSessionRootView: View {
 
             case .signedIn:
                 MyTubeRootView(pendingTopShelfURL: $pendingTopShelfURL)
-                    .environment(\.posterConfiguration, posterConfiguration)
                     .id(userSessionManager.currentSession.map(ObjectIdentifier.init))
             }
         }

@@ -14,7 +14,11 @@ struct AppTheme: DynamicProperty {
     struct Value: Equatable {
 
         var appearance: AppAppearance = .system
+        #if os(tvOS)
+        var accentColor: Color = .white
+        #else
         var accentColor: Color = .jellyfinPurple
+        #endif
 
         func resolved(colorScheme: ColorScheme, contrast: ColorSchemeContrast) -> Value {
             Value(

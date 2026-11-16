@@ -27,10 +27,4 @@ extension NavigationRoute {
             MyTubeMovieDetailView(movie: movie, relatedMovies: relatedMovies)
         }
     }
-
-    static var swiftfinHome: NavigationRoute {
-        NavigationRoute(id: "swiftfinHome") {
-            MainTabView()
-        }
-    }
 }

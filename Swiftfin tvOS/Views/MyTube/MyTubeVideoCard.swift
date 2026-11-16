@@ -20,9 +20,19 @@ enum MyTubeTileMetrics {
     static let titleHeight: CGFloat = 42
     static let metadataHeight: CGFloat = 18
     static let horizontalSpacing: CGFloat = 30
+    static let focusBorderWidth: CGFloat = 4
 
     static var gridColumns: [GridItem] {
         Array(repeating: GridItem(.fixed(width), spacing: horizontalSpacing), count: 4)
+    }
+}
+
+struct MyTubeTileButtonStyle: ButtonStyle {
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
@@ -43,7 +53,7 @@ struct MyTubeTileButton<Content: View>: View {
         Button(action: action) {
             content(isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MyTubeTileButtonStyle())
         .focused($isFocused)
         .focusEffectDisabled()
     }

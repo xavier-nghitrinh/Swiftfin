@@ -88,7 +88,7 @@ struct MyTubeChannelsView: View {
                                         .clipShape(Circle())
                                         .overlay {
                                             Circle()
-                                                .stroke(isFocused ? Color.white : .clear, lineWidth: 2)
+                                                .stroke(isFocused ? Color.white : .clear, lineWidth: MyTubeTileMetrics.focusBorderWidth)
                                                 .allowsHitTesting(false)
                                         }
 

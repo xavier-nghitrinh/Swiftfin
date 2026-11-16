@@ -6,16 +6,13 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+#if os(iOS)
 import Defaults
 import SwiftUI
 
 extension CustomizeSettingsView {
 
-    #if os(tvOS)
-    typealias PlatformPicker = ListRowMenu
-    #else
     typealias PlatformPicker = Picker
-    #endif
 
     struct ItemSection: View {
 
@@ -80,3 +77,4 @@ extension CustomizeSettingsView {
         }
     }
 }
+#endif

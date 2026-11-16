@@ -59,12 +59,21 @@ struct AppSettingsView: View {
 
     @ContentBuilder
     var body: some View {
+        #if os(tvOS)
+        Form(systemImage: "gearshape") {
+            Section {
+                ChevronButton(L10n.aboutApp) {
+                    router.route(to: .aboutApp)
+                }
+            }
+        #else
         Form(image: .jellyfinBlobBlue) {
             Section(L10n.swiftfin) {
                 ChevronButton(L10n.aboutApp) {
                     router.route(to: .aboutApp)
                 }
             }
+        #endif
 
             #if os(iOS)
             Section(L10n.customize) {

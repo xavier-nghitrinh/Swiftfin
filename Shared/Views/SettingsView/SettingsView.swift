@@ -16,10 +16,9 @@ struct SettingsView: View {
     #if os(iOS)
     @Default
     private var appearance: AppAppearance
-    #endif
-
     @Default
     private var accentColor: Color
+    #endif
 
     @AppTheme
     private var theme
@@ -31,27 +30,33 @@ struct SettingsView: View {
     private var router
 
     init() {
-        let userID = Container.shared.userSessionManager().currentSession?.user.id ?? "default"
         #if os(iOS)
+        let userID = Container.shared.userSessionManager().currentSession?.user.id ?? "default"
         _appearance = Default(.userAppearance(userID: userID))
-        #endif
         _accentColor = Default(.userAccentColor(userID: userID))
+        #endif
     }
 
     // MARK: - Body
 
     @ContentBuilder
     var body: some View {
+        #if os(tvOS)
+        Form(systemImage: "gearshape") {
+            serverSection
+            videoPlayerSection
+            diagnosticsSection
+        }
+        #else
         Form(image: .jellyfinBlobBlue) {
             serverSection
             customizeSection
             diagnosticsSection
         }
-        #if os(iOS)
         .navigationTitle(L10n.settings)
-            .navigationBarCloseButton {
-                router.dismiss()
-            }
+        .navigationBarCloseButton {
+            router.dismiss()
+        }
         #endif
     }
 
@@ -122,15 +127,26 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Video Player Section
+
+    #if os(tvOS)
+    @ContentBuilder
+    private var videoPlayerSection: some View {
+        Section(L10n.videoPlayer) {
+            ChevronButton(L10n.videoPlayer) {
+                router.route(to: .videoPlayerSettings)
+            }
+        }
+    }
+    #endif
+
     // MARK: - Customization Section
 
+    #if os(iOS)
     @ContentBuilder
     private var customizeSection: some View {
         Section {
-            #if os(iOS)
             Picker(L10n.appearance, selection: $appearance)
-            #endif
-
             ColorPicker(L10n.accentColor, selection: $accentColor, supportsOpacity: false)
 
             ChevronButton(L10n.advanced) {
@@ -142,6 +158,7 @@ struct SettingsView: View {
             Text(L10n.viewsMayRequireRestart)
         }
     }
+    #endif
 
     // MARK: - Diagnostics Section
 

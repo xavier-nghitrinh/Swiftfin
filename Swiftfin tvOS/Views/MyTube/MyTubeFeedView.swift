@@ -126,44 +126,27 @@ struct MyTubeFeedView: View {
 
                     Spacer()
 
-                    // Action buttons: Sync and Swiftfin
-                    HStack(spacing: 16) {
-                        Button {
-                            syncLibrary()
-                        } label: {
-                            HStack(spacing: 8) {
-                                if isSyncing {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                } else {
-                                    Image(systemName: "arrow.triangle.2.circlepath")
-                                }
-                                Text(isSyncing ? "Syncing..." : "Sync")
-                                    .font(.callout)
-                                    .fontWeight(.semibold)
+                    // Action buttons: Sync
+                    Button {
+                        syncLibrary()
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isSyncing {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
+                            Text(isSyncing ? "Syncing..." : "Sync")
+                                .font(.callout)
+                                .fontWeight(.semibold)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color(white: 0.25))
-                        .disabled(isSyncing)
-
-                        Button {
-                            router.route(to: .swiftfinHome)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "square.grid.2x2")
-                                Text("Swiftfin")
-                                    .font(.callout)
-                                    .fontWeight(.semibold)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color(white: 0.25))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(white: 0.25))
+                    .disabled(isSyncing)
                 }
                 .padding(.horizontal, 50)
                 .padding(.top, 20)

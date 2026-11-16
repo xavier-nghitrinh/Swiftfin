@@ -152,7 +152,7 @@ private struct ShowShelfView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                 .overlay {
                                     RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius)
-                                        .stroke(isFocused ? Color.white : .clear, lineWidth: 2)
+                                        .stroke(isFocused ? Color.white : .clear, lineWidth: MyTubeTileMetrics.focusBorderWidth)
                                         .allowsHitTesting(false)
                                 }
 
@@ -353,6 +353,49 @@ struct MyTubeShowDetailView: View {
     }
 }
 
+private struct MyTubeSeasonTabButtonStyle: ButtonStyle {
+
+    let isSelected: Bool
+    let isFocused: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .foregroundStyle(foregroundColor)
+            .background(backgroundColor, in: Capsule())
+            .overlay {
+                if isFocused && isSelected {
+                    Capsule()
+                        .stroke(Color.white, lineWidth: MyTubeTileMetrics.focusBorderWidth)
+                }
+            }
+            .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.96 : (isFocused ? 1.04 : 1.0))
+            .animation(.easeInOut(duration: 0.15), value: isFocused)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+
+    private var backgroundColor: Color {
+        if isFocused {
+            return isSelected ? Color.red : Color.white
+        } else if isSelected {
+            return Color.red
+        } else {
+            return Color.white.opacity(0.14)
+        }
+    }
+
+    private var foregroundColor: Color {
+        if isFocused {
+            return isSelected ? Color.white : Color.black
+        } else {
+            return Color.white
+        }
+    }
+}
+
 private struct MyTubeSeasonTabs: View {
 
     let seasons: [MyTubeSeason]
@@ -366,26 +409,18 @@ private struct MyTubeSeasonTabs: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(seasons) { season in
+                        let isSeasonFocused = focusedSeason == season.seasonNumber
+                        let isSeasonSelected = selection == season.seasonNumber
+
                         Button {
                             selection = season.seasonNumber
                         } label: {
                             Text(season.seasonName)
-                                .font(.callout.weight(.semibold))
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .background(
-                                    selection == season.seasonNumber ? Color.red : Color.white.opacity(0.12),
-                                    in: Capsule()
-                                )
-                                .overlay {
-                                    Capsule()
-                                        .stroke(
-                                            focusedSeason == season.seasonNumber ? Color.white : .clear,
-                                            lineWidth: 2
-                                        )
-                                }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(MyTubeSeasonTabButtonStyle(
+                            isSelected: isSeasonSelected,
+                            isFocused: isSeasonFocused
+                        ))
                         .focused($focusedSeason, equals: season.seasonNumber)
                         .focusEffectDisabled()
                         .id(season.seasonNumber)

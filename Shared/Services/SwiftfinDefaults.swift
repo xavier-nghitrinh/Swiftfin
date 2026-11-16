@@ -93,7 +93,11 @@ extension Defaults.Keys {
 
     /// The saved accent color for a specific user.
     static func userAccentColor(userID: String) -> Key<Color> {
+        #if os(tvOS)
+        userKeys.key("userAccentColor", default: .white, suiteName: userID)
+        #else
         userKeys.key("userAccentColor", default: .jellyfinPurple, suiteName: userID)
+        #endif
     }
 
     /// The saved appearance for a specific user.
@@ -155,7 +159,11 @@ extension Defaults.Keys {
         }
 
         static var tabBarPlacement: Key<TabBarPlacement> {
+            #if os(tvOS)
+            UserKey("tabBarPlacement", default: .tabBar)
+            #else
             UserKey("tabBarPlacement", default: .sidebar)
+            #endif
         }
 
         enum Poster {

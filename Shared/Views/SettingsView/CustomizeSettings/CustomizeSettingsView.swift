@@ -11,12 +11,9 @@ import SwiftUI
 
 struct CustomizeSettingsView: View {
 
+    #if os(iOS)
     @Default(.Customization.Search.enabledDrawerFilters)
     private var searchEnabledDrawerFilters
-
-    #if os(tvOS)
-    @Default(.Customization.tabBarPlacement)
-    private var tabBarPlacement
     #endif
 
     @Router
@@ -25,12 +22,11 @@ struct CustomizeSettingsView: View {
     @ContentBuilder
     var body: some View {
         Form(systemImage: "gear") {
-            #if os(tvOS)
-            Section(L10n.tabBar) {
-                ListRowMenu(L10n.layout, selection: $tabBarPlacement)
+            ChevronButton(L10n.videoPlayer) {
+                router.route(to: .videoPlayerSettings)
             }
-            #endif
 
+            #if os(iOS)
             Section {
                 ChevronButton(L10n.search) {
                     router.route(to: .itemFilterDrawerSelector(selection: $searchEnabledDrawerFilters))
@@ -52,11 +48,8 @@ struct CustomizeSettingsView: View {
                 router.route(to: .posterSettings)
             }
 
-            ChevronButton(L10n.videoPlayer) {
-                router.route(to: .videoPlayerSettings)
-            }
-
             HomeSection()
+            #endif
         }
         .navigationTitle(L10n.advanced)
     }

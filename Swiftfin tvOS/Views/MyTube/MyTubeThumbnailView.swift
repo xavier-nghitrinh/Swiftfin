@@ -150,7 +150,7 @@ struct MyTubeThumbnailView: View {
         .clipShape(RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: MyTubeTileMetrics.cornerRadius)
-                .stroke(isFocused ? Color.white : .clear, lineWidth: 2)
+                .stroke(isFocused ? Color.white : .clear, lineWidth: MyTubeTileMetrics.focusBorderWidth)
                 .allowsHitTesting(false)
         }
         .onAppear(perform: decodeBase64IfPresent)

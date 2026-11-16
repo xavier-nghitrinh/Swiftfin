@@ -327,12 +327,14 @@ struct SelectUserView: View {
             }
         }
         .toolbar {
+            #if !os(tvOS)
             ToolbarItem(placement: .principal) {
                 Image(.jellyfinBlobBlue)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: viewLayout.value(standard: 30, large: 100))
             }
+            #endif
 
             #if os(iOS)
             if viewLayout.isCompact {

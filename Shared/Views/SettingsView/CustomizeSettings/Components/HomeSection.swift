@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+#if os(iOS)
 import Defaults
 import Engine
 import SwiftUI
@@ -67,3 +68,4 @@ extension CustomizeSettingsView {
         }
     }
 }
+#endif
