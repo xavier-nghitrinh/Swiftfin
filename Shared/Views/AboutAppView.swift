@@ -18,92 +18,100 @@ struct AboutAppView: View {
     private var router
 
     @ContentBuilder
+    private var formContent: some View {
+        if !viewLayout.isLarge {
+            Section {
+                VStack(alignment: .center, spacing: 10) {
+                    Image(.jellyfinBlobBlue)
+                        .resizable()
+                        .aspectRatio(1, contentMode: .fit)
+                        .frame(height: 150)
+
+                    Text(verbatim: "Swiftfin")
+                        .fontWeight(.semibold)
+                        .font(.title2)
+                }
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+            }
+        }
+
+        Section {
+            #if DEBUG
+            // swiftlint:disable:next hard_coded_display_string
+            LabeledContent(
+                "Branch",
+                value: UIApplication.gitBranch ?? .emptyDash
+            )
+            #else
+            LabeledContent(
+                L10n.version,
+                value: "\(UIApplication.appVersion ?? .emptyDash) (\(UIApplication.bundleVersion ?? .emptyDash))"
+            )
+            #endif
+
+            #if os(iOS)
+            ChevronButton(
+                L10n.permissions,
+                systemName: "hand.raised.fill"
+            ) {
+                router.route(to: .appPermissions)
+            }
+            #endif
+
+            ChevronButton(
+                L10n.settings,
+                systemName: "gearshape.fill",
+                external: true
+            ) {
+                Task { try? await SystemSettings.application.open() }
+            }
+        }
+
+        Section {
+            // tvOS cannot open generic web links
+            #if !os(tvOS)
+            ChevronButton(
+                L10n.sourceCode,
+                image: .logoGithub,
+                external: true
+            ) {
+                UIApplication.shared.open(.swiftfinGithub)
+            }
+
+            ChevronButton(
+                L10n.license,
+                content: L10n.mlp2,
+                systemName: "text.document",
+                external: true
+            ) {
+                UIApplication.shared.open(.swiftfinGithubLicense)
+            }
+
+            ChevronButton(
+                L10n.bugsAndFeatures,
+                systemName: "plus.circle.fill",
+                external: true
+            ) {
+                UIApplication.shared.open(.swiftfinGithubIssues)
+            }
+            .symbolRenderingMode(.monochrome)
+            #endif
+        }
+    }
+
+    @ContentBuilder
     var body: some View {
         #if os(tvOS)
         Form(systemImage: "info.circle") {
-        #else
-        Form(image: .jellyfinBlobBlue) {
-        #endif
-            if !viewLayout.isLarge {
-                Section {
-                    VStack(alignment: .center, spacing: 10) {
-                        Image(.jellyfinBlobBlue)
-                            .resizable()
-                            .aspectRatio(1, contentMode: .fit)
-                            .frame(height: 150)
-
-                        Text(verbatim: "Swiftfin")
-                            .fontWeight(.semibold)
-                            .font(.title2)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .listRowBackground(Color.clear)
-                }
-            }
-
-            Section {
-                #if DEBUG
-                // swiftlint:disable:next hard_coded_display_string
-                LabeledContent(
-                    "Branch",
-                    value: UIApplication.gitBranch ?? .emptyDash
-                )
-                #else
-                LabeledContent(
-                    L10n.version,
-                    value: "\(UIApplication.appVersion ?? .emptyDash) (\(UIApplication.bundleVersion ?? .emptyDash))"
-                )
-                #endif
-
-                #if os(iOS)
-                ChevronButton(
-                    L10n.permissions,
-                    systemName: "hand.raised.fill"
-                ) {
-                    router.route(to: .appPermissions)
-                }
-                #endif
-
-                ChevronButton(
-                    L10n.settings,
-                    systemName: "gearshape.fill",
-                    external: true
-                ) {
-                    Task { try? await SystemSettings.application.open() }
-                }
-            }
-
-            Section {
-                // tvOS cannot open generic web links
-                #if !os(tvOS)
-                ChevronButton(
-                    L10n.sourceCode,
-                    image: .logoGithub,
-                    external: true
-                ) {
-                    UIApplication.shared.open(.swiftfinGithub)
-                }
-
-                ChevronButton(
-                    L10n.license,
-                    content: L10n.mlp2,
-                    systemName: "text.document",
-                    external: true
-                ) {
-                    UIApplication.shared.open(.swiftfinGithubLicense)
-                }
-
-                ChevronButton(
-                    L10n.bugsAndFeatures,
-                    systemName: "plus.circle.fill",
-                    external: true
-                ) {
-                    UIApplication.shared.open(.swiftfinGithubIssues)
-                }
-                .symbolRenderingMode(.monochrome)
-                #endif
-            }
+            formContent
         }
         .navigationTitle(L10n.aboutApp)
+        #else
+        Form(image: .jellyfinBlobBlue) {
+            formContent
+        }
+        .navigationTitle(L10n.aboutApp)
+        #endif
     }
 }

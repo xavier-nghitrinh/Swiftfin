@@ -58,98 +58,100 @@ struct AppSettingsView: View {
     }
 
     @ContentBuilder
+    private var formContent: some View {
+        #if os(tvOS)
+        Section {
+            ChevronButton(L10n.aboutApp) {
+                router.route(to: .aboutApp)
+            }
+        }
+        #else
+        Section(L10n.swiftfin) {
+            ChevronButton(L10n.aboutApp) {
+                router.route(to: .aboutApp)
+            }
+        }
+
+        Section(L10n.customize) {
+            ChevronButton(L10n.appIcon) {
+                router.route(to: .appIconSelector)
+            }
+
+            if !selectUserUseSplashscreen {
+                Picker(
+                    L10n.appearance,
+                    selection: $appearance
+                )
+            }
+        }
+        #endif
+
+        Section {
+            Toggle(L10n.useSplashscreen, isOn: $selectUserUseSplashscreen)
+
+            if selectUserUseSplashscreen {
+                #if os(tvOS)
+                ListRowMenu(L10n.servers) {
+                    if selectUserAllServersSplashscreen == .all {
+                        Label(L10n.random, systemImage: "dice.fill")
+                    } else if let selectedServer {
+                        Text(selectedServer.name)
+                    } else {
+                        Text(L10n.none)
+                    }
+                } content: {
+                    serverPicker
+                }
+                #else
+                serverPicker
+                #endif
+            }
+        } header: {
+            Text(L10n.splashscreen)
+        } footer: {
+            if selectUserUseSplashscreen {
+                Text(L10n.splashscreenFooter)
+            }
+        }
+
+        Section {
+            Toggle(L10n.signoutClose, isOn: $signOutOnClose)
+        } footer: {
+            Text(L10n.signoutCloseFooter)
+        }
+
+        Section {
+            Toggle(L10n.signoutBackground, isOn: $signOutOnBackground)
+
+            if signOutOnBackground {
+                HourMinutePicker(title: L10n.duration, interval: $backgroundSignOutInterval)
+            }
+        } footer: {
+            Text(L10n.signoutBackgroundFooter)
+        }
+
+        ChevronButton(L10n.logs) {
+            router.route(to: .log)
+        }
+
+        #if DEBUG
+        ChevronButton("Debug") {
+            router.route(to: .debugSettings)
+        }
+        #endif
+    }
+
+    @ContentBuilder
     var body: some View {
         #if os(tvOS)
         Form(systemImage: "gearshape") {
-            Section {
-                ChevronButton(L10n.aboutApp) {
-                    router.route(to: .aboutApp)
-                }
-            }
+            formContent
+        }
         #else
         Form(image: .jellyfinBlobBlue) {
-            Section(L10n.swiftfin) {
-                ChevronButton(L10n.aboutApp) {
-                    router.route(to: .aboutApp)
-                }
-            }
-        #endif
-
-            #if os(iOS)
-            Section(L10n.customize) {
-                ChevronButton(L10n.appIcon) {
-                    router.route(to: .appIconSelector)
-                }
-
-                if !selectUserUseSplashscreen {
-                    Picker(
-                        L10n.appearance,
-                        selection: $appearance
-                    )
-                }
-            }
-            #else
-            // Section(L10n.customize) {
-            //     ChevronButton(L10n.appIcon) {
-            //         router.route(to: .appIconSelector)
-            //     }
-            // }
-            #endif
-
-            Section {
-                Toggle(L10n.useSplashscreen, isOn: $selectUserUseSplashscreen)
-
-                if selectUserUseSplashscreen {
-                    #if os(tvOS)
-                    ListRowMenu(L10n.servers) {
-                        if selectUserAllServersSplashscreen == .all {
-                            Label(L10n.random, systemImage: "dice.fill")
-                        } else if let selectedServer {
-                            Text(selectedServer.name)
-                        } else {
-                            Text(L10n.none)
-                        }
-                    } content: {
-                        serverPicker
-                    }
-                    #else
-                    serverPicker
-                    #endif
-                }
-            } header: {
-                Text(L10n.splashscreen)
-            } footer: {
-                if selectUserUseSplashscreen {
-                    Text(L10n.splashscreenFooter)
-                }
-            }
-
-            Section {
-                Toggle(L10n.signoutClose, isOn: $signOutOnClose)
-            } footer: {
-                Text(L10n.signoutCloseFooter)
-            }
-
-            Section {
-                Toggle(L10n.signoutBackground, isOn: $signOutOnBackground)
-
-                if signOutOnBackground {
-                    HourMinutePicker(title: L10n.duration, interval: $backgroundSignOutInterval)
-                }
-            } footer: {
-                Text(L10n.signoutBackgroundFooter)
-            }
-
-            ChevronButton(L10n.logs) {
-                router.route(to: .log)
-            }
-
-            #if DEBUG
-            ChevronButton("Debug") {
-                router.route(to: .debugSettings)
-            }
-            #endif
+            formContent
         }
+        #endif
         .animation(.linear, value: selectUserUseSplashscreen)
         .animation(.linear, value: signOutOnBackground)
         .navigationTitle(L10n.advanced)
