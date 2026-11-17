@@ -38,12 +38,15 @@ extension VideoPlayer {
         @Toaster
         var toaster: ToastProxy
 
+        @AdaptiveLayout
+        private var viewLayout
+
         @ContentBuilder
         var body: some View {
             @Bindable
             var viewState = viewState
 
-            VStack(spacing: 0) {
+            VStack(spacing: viewLayout.value(standard: 30, large: 40)) {
                 Toolbar()
                     .isVisible(viewState.visibleElements.contains(.toolbar))
                     .enabled(viewState.visibleElements.contains(.toolbar))

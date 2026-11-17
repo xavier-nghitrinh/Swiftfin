@@ -853,6 +853,8 @@ extension VideoPlayer {
             view.addGestureRecognizer(gesture)
             view.addGestureRecognizer(trackpadSwipeBackwardGesture)
             view.addGestureRecognizer(trackpadSwipeForwardGesture)
+            view.addGestureRecognizer(trackpadSwipeUpGesture)
+            view.addGestureRecognizer(trackpadSwipeDownGesture)
             view.addGestureRecognizer(trackpadTouchGesture)
             configureTrackpadControllers()
             trackpadControllerConnectionObserver = NotificationCenter.default.addObserver(
@@ -937,7 +939,7 @@ extension VideoPlayer {
 
             let playbackControlsBottomAnchor = playbackControlsView.bottomAnchor.constraint(
                 equalTo: view.bottomAnchor,
-                constant: -dismissedSupplementContainerOffset
+                constant: -viewLayout.edgePadding
             )
             playbackControlsBottomAnchor.priority = .defaultHigh
 
@@ -1138,9 +1140,10 @@ extension VideoPlayer {
         }()
 
         private func trackpadSwipeGesture(
-            direction: UISwipeGestureRecognizer.Direction
+            direction: UISwipeGestureRecognizer.Direction,
+            action: Selector
         ) -> UISwipeGestureRecognizer {
-            let gesture = UISwipeGestureRecognizer(target: self, action: #selector(handleTrackpadSwipe(_:)))
+            let gesture = UISwipeGestureRecognizer(target: self, action: action)
             gesture.direction = direction
             gesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirect.rawValue)]
             gesture.allowedPressTypes = []
@@ -1149,8 +1152,22 @@ extension VideoPlayer {
             return gesture
         }
 
-        private lazy var trackpadSwipeBackwardGesture = trackpadSwipeGesture(direction: .left)
-        private lazy var trackpadSwipeForwardGesture = trackpadSwipeGesture(direction: .right)
+        private lazy var trackpadSwipeBackwardGesture = trackpadSwipeGesture(
+            direction: .left,
+            action: #selector(handleTrackpadSwipe(_:))
+        )
+        private lazy var trackpadSwipeForwardGesture = trackpadSwipeGesture(
+            direction: .right,
+            action: #selector(handleTrackpadSwipe(_:))
+        )
+        private lazy var trackpadSwipeUpGesture = trackpadSwipeGesture(
+            direction: .up,
+            action: #selector(handleTrackpadVerticalSwipe(_:))
+        )
+        private lazy var trackpadSwipeDownGesture = trackpadSwipeGesture(
+            direction: .down,
+            action: #selector(handleTrackpadVerticalSwipe(_:))
+        )
 
         private lazy var trackpadTouchGesture: UILongPressGestureRecognizer = {
             let gesture = UILongPressGestureRecognizer(target: self, action: #selector(handleTrackpadTouch(_:)))
@@ -1261,6 +1278,23 @@ extension VideoPlayer {
                     defaultAction: {}
                 )
             )
+        }
+
+        @objc
+        private func handleTrackpadVerticalSwipe(_ gesture: UISwipeGestureRecognizer) {
+            guard gesture.state == .ended, !viewState.isGestureLocked else { return }
+
+            if gesture === trackpadSwipeUpGesture {
+                guard viewState.presentation == .hidden || viewState.presentation == .progress else { return }
+
+                viewState.showControls()
+            } else {
+                guard viewState.presentation == .progress || viewState.presentation == .controls,
+                      !viewState.isScrubbing
+                else { return }
+
+                viewState.hideControls()
+            }
         }
 
         @objc

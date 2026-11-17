@@ -862,7 +862,7 @@ const Player = {
     this.playbackData = playbackData;
     this.currentVideo = playbackData;
     this.currentQuality = playbackData.current_quality || 'direct';
-    this.titleEl.textContent = playbackData.title;
+    this.titleEl.textContent = cleanVideoTitle(playbackData.title);
     this.showOverlay();
 
     this.buildQualityMenu(playbackData.qualities, this.currentQuality);

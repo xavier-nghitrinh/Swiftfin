@@ -97,6 +97,15 @@ def get_home_feed(
     """YouTube-like Subscription Feed: newest videos from the user's subscribed channels, hiding watched."""
     return FeedService.get_home_feed(user["user_id"], limit=limit, offset=offset, unplayed_only=unplayed_only)
 
+@app.get("/api/gone-soon")
+def get_gone_soon(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Subscribed videos oldest first: the ones the automatic space cleanup will delete next."""
+    return FeedService.get_gone_soon(user["user_id"], limit=limit, offset=offset)
+
 @app.get("/api/channels")
 def get_channels(
     subscription: str = Query("all", pattern="^(all|subscribed|unsubscribed)$"),
@@ -302,6 +311,11 @@ async def trigger_scan(request: Request, force: bool = False):
         except Exception:
             pass
     return scan_and_sync(force_full=is_force)
+
+@app.post("/api/admin/cleanup")
+def trigger_space_cleanup():
+    """Delete the oldest YouTube videos through Jellyfin while the media folder exceeds MYTUBE_MAX_MEDIA_GB."""
+    return CleanupService.run_space_cleanup()
 
 @app.post("/api/videos/stop-encodings")
 def stop_active_encodings():

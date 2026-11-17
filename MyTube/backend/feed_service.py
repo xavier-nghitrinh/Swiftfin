@@ -16,7 +16,15 @@ VIDEO_LIST_COLUMNS = """
 
 class FeedService:
     @staticmethod
-    def _paginated_videos(cursor, user_id: str, where_clauses: List[str], params: List[Any], limit: int, offset: int) -> Dict[str, Any]:
+    def _paginated_videos(
+        cursor,
+        user_id: str,
+        where_clauses: List[str],
+        params: List[Any],
+        limit: int,
+        offset: int,
+        order_sql: str = "v.upload_date DESC, v.video_id DESC",
+    ) -> Dict[str, Any]:
         where_sql = " AND ".join(where_clauses)
 
         cursor.execute(
@@ -31,7 +39,7 @@ class FeedService:
                 LEFT JOIN channels c ON v.channel_id = c.channel_id
                 {YOUTUBE_PROGRESS_JOIN}
                 WHERE {where_sql}
-                ORDER BY v.upload_date DESC, v.video_id DESC
+                ORDER BY {order_sql}
                 LIMIT ? OFFSET ?
             """
         cursor.execute(query, [user_id] + params + [limit, offset])
@@ -58,6 +66,29 @@ class FeedService:
             if unplayed_only:
                 where_clauses.append("COALESCE(p.watched, 0) = 0")
             return FeedService._paginated_videos(cursor, user_id, where_clauses, params, limit, offset)
+
+    @staticmethod
+    def get_gone_soon(user_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """Subscribed available videos, oldest first: the next candidates for automatic space cleanup.
+
+        Ordered by upload_date (the same key the space cleanup uses), then ingest time as a tiebreaker.
+        Videos without an upload_date sort last.
+        """
+        with get_db() as conn:
+            cursor = conn.cursor()
+            where_clauses = [
+                "v.file_status = 'available'",
+                "v.channel_id IN (SELECT channel_id FROM user_subscriptions WHERE user_id = ?)",
+            ]
+            return FeedService._paginated_videos(
+                cursor,
+                user_id,
+                where_clauses,
+                [user_id],
+                limit,
+                offset,
+                order_sql="(v.upload_date IS NULL), v.upload_date ASC, v.created_at ASC, v.video_id ASC",
+            )
 
     @staticmethod
     def _fetch_channels(cursor, user_id: str, where_sql: str = "", where_params: tuple = (), order_sql: str = "") -> List[Dict[str, Any]]:

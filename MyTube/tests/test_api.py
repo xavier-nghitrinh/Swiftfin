@@ -324,6 +324,99 @@ def test_migration_backfills_legacy_state_for_xavier(tmp_path, monkeypatch):
         assert conn.execute("SELECT COUNT(*) FROM videos WHERE file_status = 'trash'").fetchone()[0] == 0
 
 
+def _seed_dated_video(video_id, channel_id, upload_date, file_path="", jellyfin_item_id=None):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO channels (channel_id, name, folder_path, thumbnail_url, created_at) VALUES (?, ?, '', '', '2024-01-01T00:00:00+00:00')",
+            (channel_id, channel_id.title()),
+        )
+        conn.execute(
+            """INSERT INTO videos (video_id, channel_id, channel_name, title, upload_date, file_path, file_status, jellyfin_item_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'available', ?, '2024-01-01T00:00:00+00:00', '2024-01-01T00:00:00+00:00')""",
+            (video_id, channel_id, channel_id.title(), f"Video {video_id}", upload_date, file_path, jellyfin_item_id or video_id),
+        )
+        conn.commit()
+
+def _video_ids():
+    with get_db() as conn:
+        return [r["video_id"] for r in conn.execute("SELECT video_id FROM videos ORDER BY video_id")]
+
+def test_gone_soon_lists_subscribed_videos_oldest_first_in_batches(temp_db):
+    _seed_dated_video("new", "alpha", "2024-06-01")
+    _seed_dated_video("old", "alpha", "2023-01-01")
+    _seed_dated_video("mid", "alpha", "2023-06-01")
+    _seed_dated_video("other", "beta", "2022-01-01")
+    headers = _create_user("Ann")
+    client.put("/api/channels/alpha/subscription", json={"subscribed": True}, headers=headers)
+
+    first = client.get("/api/gone-soon?limit=2", headers=headers).json()
+    assert [item["video_id"] for item in first["items"]] == ["old", "mid"]
+    assert first["has_more"] is True
+
+    second = client.get("/api/gone-soon?limit=2&offset=2", headers=headers).json()
+    assert [item["video_id"] for item in second["items"]] == ["new"]
+    assert second["has_more"] is False
+
+def test_space_cleanup_deletes_oldest_videos_until_under_limit(temp_db, tmp_path, monkeypatch):
+    import backend.cleanup_service as cleanup_service
+
+    media = tmp_path / "media" / "alpha"
+    media.mkdir(parents=True)
+    jellyfin_deleted = []
+    monkeypatch.setattr(cleanup_service, "REMOTE_MEDIA_DIR", str(tmp_path / "media"))
+    monkeypatch.setattr(cleanup_service, "MAX_MEDIA_GB", 2.5 / 1024)  # 2.5 MiB
+    monkeypatch.setattr(cleanup_service.jellyfin, "delete_item", lambda item_id: jellyfin_deleted.append(item_id) or True)
+    monkeypatch.setattr(cleanup_service.jellyfin, "trigger_refresh", lambda: True)
+    for name, date in [("old", "2023-01-01"), ("mid", "2023-06-01"), ("new", "2024-06-01")]:
+        path = media / f"{name}.mp4"
+        path.write_bytes(b"x" * 1024 * 1024)
+        (media / f"{name}.info.json").write_text("{}")
+        _seed_dated_video(name, "alpha", date, file_path=str(path))
+
+    result = cleanup_service.CleanupService.run_space_cleanup()
+
+    assert result["deleted"] == ["old"]
+    assert jellyfin_deleted == ["old"]
+    assert not (media / "old.mp4").exists()
+    assert not (media / "old.info.json").exists()
+    assert (media / "mid.mp4").exists()
+    assert _video_ids() == ["mid", "new"]
+
+def test_local_files_and_rows_survive_when_jellyfin_refuses_delete(temp_db, tmp_path, monkeypatch):
+    import backend.cleanup_service as cleanup_service
+
+    path = tmp_path / "keep.mp4"
+    path.write_bytes(b"x")
+    _seed_dated_video("keep", "alpha", "2023-01-01", file_path=str(path))
+    monkeypatch.setattr(cleanup_service.jellyfin, "delete_item", lambda item_id: False)
+
+    result = cleanup_service.CleanupService.delete_permanently("keep")
+
+    assert result["status"] == "error"
+    assert path.exists()
+    assert _video_ids() == ["keep"]
+
+def test_scan_drops_rows_missing_from_jellyfin_but_not_on_empty_fetch(temp_db, monkeypatch):
+    import backend.scanner as scanner
+
+    _seed_dated_video("kept", "alpha", "2023-01-01", file_path="/media/alpha/kept.mp4", jellyfin_item_id="jf-kept")
+    _seed_dated_video("gone", "alpha", "2023-01-01", file_path="/media/alpha/gone.mp4", jellyfin_item_id="jf-gone")
+    monkeypatch.setattr(scanner, "sync_movies", lambda: {})
+    monkeypatch.setattr(scanner, "sync_shows_and_episodes", lambda: {})
+    monkeypatch.setattr(scanner, "sync_missing_thumbnails_to_sqlite", lambda *args, **kwargs: 0)
+
+    monkeypatch.setattr(scanner.jellyfin, "get_library_items", lambda: [])
+    scanner.scan_and_sync()
+    assert _video_ids() == ["gone", "kept"]
+
+    monkeypatch.setattr(
+        scanner.jellyfin, "get_library_items",
+        lambda: [{"Id": "jf-kept", "Path": "/media/alpha/kept.mp4"}],
+    )
+    result = scanner.scan_and_sync()
+    assert _video_ids() == ["kept"]
+    assert result["removed_videos"] == 1
+
 def test_api():
     print("=== Testing MyTube Backend API ===")
     xavier = next(u for u in client.get("/api/users").json() if u["name"] == "xavier")

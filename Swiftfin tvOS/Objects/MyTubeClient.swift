@@ -87,6 +87,21 @@ final class MyTubeClient {
 
     // MARK: - GET Requests
 
+    func getGoneSoon(
+        limit: Int = 20,
+        offset: Int = 0
+    ) async throws -> MyTubeFeedResponse {
+        let base = try baseURL()
+        var components = URLComponents(url: base.appendingPathComponent("gone-soon"), resolvingAgainstBaseURL: true)
+        components?.queryItems = [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ]
+
+        guard let url = components?.url else { throw MyTubeError.invalidURL }
+        return try await fetch(url)
+    }
+
     func getHomeFeed(
         unplayedOnly: Bool = true,
         limit: Int = 50,

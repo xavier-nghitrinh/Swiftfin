@@ -160,7 +160,7 @@ struct MediaPlaybackConfiguration {
 
         selectTracks(
             audio: audioStreamIndex ?? source.defaultAudioStreamIndex ?? audioStreams.first?.index ?? 0,
-            subtitle: subtitleStreamIndex ?? source.defaultSubtitleStreamIndex ?? -1,
+            subtitle: subtitleStreamIndex ?? -1,
             secondary: secondarySubtitleStreamIndex ?? -1,
             preservingPreferences: true
         )

@@ -27,6 +27,7 @@ struct MyTubeRootView: View {
     enum MyTubeTab: String, CaseIterable, Identifiable {
         case subscriptions
         case channels
+        case goneSoon
         case movies
         case shows
         case search
@@ -139,6 +140,9 @@ struct MyTubeRootView: View {
     private var channelsCoordinator = NavigationCoordinator()
 
     @StateObject
+    private var goneSoonCoordinator = NavigationCoordinator()
+
+    @StateObject
     private var moviesCoordinator = NavigationCoordinator()
 
     @StateObject
@@ -169,6 +173,15 @@ struct MyTubeRootView: View {
                 }
             } label: {
                 Label("Channels", systemImage: "person.2.fill")
+            }
+
+            // Gone soon (oldest subscribed videos, pending auto-deletion)
+            SwiftUI.Tab(value: MyTubeTab.goneSoon) {
+                NavigationInjectionView(coordinator: goneSoonCoordinator) {
+                    MyTubeGoneSoonView()
+                }
+            } label: {
+                Label("Gone soon", systemImage: "trash.fill")
             }
 
             // 3. Movies

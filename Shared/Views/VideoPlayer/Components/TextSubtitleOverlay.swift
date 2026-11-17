@@ -76,7 +76,7 @@ private struct TextSubtitleOverlayContent: View {
         MPVTextSubtitleOverlay(
             snapshot: snapshot,
             videoFrame: videoLayout.videoFrame(in:),
-            placementPolicy: .primaryAuthored,
+            placementPolicy: .roles,
             automaticPlacement: .container,
             spacing: pointSize * 0.25
         ) { region in

@@ -9,6 +9,10 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Local media directory for metadata and thumbnail access.
 REMOTE_MEDIA_DIR = os.environ.get("MYTUBE_REMOTE_MEDIA_DIR", "/media/devmon/EXTERNAL/yt_video")
 
+# Space-based auto-deletion: when the YouTube media folder exceeds this many GiB,
+# the oldest available videos are deleted (via Jellyfin) until it fits again.
+MAX_MEDIA_GB = float(os.environ.get("MYTUBE_MAX_MEDIA_GB", "200"))
+
 def resolve_db_path() -> str:
     """
     Resolve SQLite DB location:

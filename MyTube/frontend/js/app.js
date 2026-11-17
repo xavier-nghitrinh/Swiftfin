@@ -256,7 +256,7 @@ const App = {
 
     // Infinite scroll listener for Browse View
     window.addEventListener('scroll', () => {
-      if (this.currentRoute !== 'home' && !this.currentRoute.startsWith('#channel/')) return;
+      if (this.currentRoute !== 'home' && !this.currentRoute.startsWith('#channel/') && this.currentRoute !== '#gone-soon') return;
       if (this.isLoading || !this.feedHasMore) return;
 
       const scrollBottom = window.innerHeight + window.scrollY;
@@ -624,6 +624,9 @@ const App = {
       } else if (hash === '#channels') {
         this.currentRoute = 'channels';
         this.setActiveNav('nav-channels');
+      } else if (hash === '#gone-soon') {
+        this.currentRoute = hash;
+        this.setActiveNav('nav-gone');
       } else if (hash.startsWith('#search')) {
         this.currentRoute = 'search';
       } else {
@@ -682,6 +685,10 @@ const App = {
       this.currentRoute = 'channels';
       this.setActiveNav('nav-channels');
       this.renderChannelsList();
+    } else if (hash === '#gone-soon') {
+      this.currentRoute = hash;
+      this.setActiveNav('nav-gone');
+      this.renderGoneSoon();
     } else if (hash.startsWith('#search')) {
       this.currentRoute = 'search';
       const urlParams = new URLSearchParams(hash.split('?')[1]);
@@ -724,19 +731,20 @@ const App = {
       this.loadUpNextVideos();
     }
 
+    const watchTitle = cleanVideoTitle(data.title);
     if (data.media_type === 'movie') {
-      document.getElementById('watch-video-title').textContent = data.title;
+      document.getElementById('watch-video-title').textContent = watchTitle;
       document.getElementById('watch-channel-name').textContent = `Movie (${data.upload_date || 'Film'})`;
       document.getElementById('watch-upload-date').textContent = data.duration ? this.formatDurationHuman(data.duration) : '';
     } else if (data.media_type === 'episode') {
-      document.getElementById('watch-video-title').textContent = data.title;
+      document.getElementById('watch-video-title').textContent = watchTitle;
       document.getElementById('watch-channel-name').textContent = data.channel_name;
       document.getElementById('watch-upload-date').textContent = data.duration ? this.formatDurationHuman(data.duration) : '';
     } else {
-      document.getElementById('watch-video-title').textContent = data.title;
+      document.getElementById('watch-video-title').textContent = watchTitle;
       document.getElementById('watch-channel-name').textContent = data.channel_name;
       document.getElementById('watch-upload-date').textContent = data.upload_date
-        ? `Uploaded ${this.formatRelativeTime(data.upload_date)} (${data.upload_date})`
+        ? `Uploaded ${this.formatUploadDate(data.upload_date)}`
         : '';
     }
 
@@ -808,7 +816,8 @@ const App = {
 
     const thumbUrl = video.thumbnail_url || `/thumbnails/videos/${video.video_id}.jpg`;
     const durStr = Player.formatTime(video.duration);
-    const uploadTimeAgo = this.formatRelativeTime(video.upload_date);
+    const title = cleanVideoTitle(video.title);
+    const uploadTimeAgo = this.formatUploadDate(video.upload_date);
 
     let progressPercent = 0;
     if (video.duration > 0 && video.playback_position > 0 && !video.watched) {
@@ -817,13 +826,13 @@ const App = {
 
     card.innerHTML = `
       <div class="thumbnail-box">
-        <img src="${thumbUrl}" loading="lazy" alt="${this.escapeHtml(video.title)}">
+        <img src="${thumbUrl}" loading="lazy" alt="${this.escapeHtml(title)}">
         <span class="duration-badge">${durStr}</span>
         ${video.watched ? `<span class="watched-badge">WATCHED</span>` : ''}
         ${progressPercent > 0 ? `<div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${progressPercent}%;"></div></div>` : ''}
       </div>
       <div class="video-info">
-        <h4 class="video-title">${this.escapeHtml(video.title)}</h4>
+        <h4 class="video-title">${this.escapeHtml(title)}</h4>
         <div class="video-subtext">${this.escapeHtml(video.channel_name)}</div>
         <div class="video-subtext">${uploadTimeAgo}</div>
       </div>
@@ -1122,6 +1131,44 @@ const App = {
   },
 
   // =========================================================
+  // 3b. Gone Soon View (oldest subscribed videos, next to be cleaned up)
+  // =========================================================
+  async renderGoneSoon(append = false) {
+    let shouldCheckAutoLoad = false;
+    if (!append) {
+      this.viewTitle.textContent = 'Gone soon';
+      this.filterChips.innerHTML = '<div class="gone-soon-note">Oldest subscribed videos. They are deleted automatically when storage is full.</div>';
+      this.videoGrid.style.display = 'grid';
+      this.channelList.style.display = 'none';
+      this.videoGrid.innerHTML = '';
+      this.showEmpty(false);
+    }
+
+    this.showLoading(true);
+    try {
+      const data = await api.getGoneSoon(this.feedLimit, this.feedOffset);
+      this.feedHasMore = data.has_more;
+
+      if (!append && data.items.length === 0) {
+        this.showEmpty(true, 'Nothing is waiting to be cleaned up.');
+      } else {
+        this.showEmpty(false);
+        data.items.forEach((video) => {
+          this.videoGrid.appendChild(this.createVideoCard(video));
+        });
+        shouldCheckAutoLoad = data.items.length > 0;
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      this.showLoading(false);
+      if (shouldCheckAutoLoad) {
+        this.loadMoreIfNeeded();
+      }
+    }
+  },
+
+  // =========================================================
   // 5. Search Results View
   // =========================================================
   async renderSearchResults() {
@@ -1156,11 +1203,13 @@ const App = {
       this.renderHomeFeed(true);
     } else if (this.currentRoute.startsWith('#channel/')) {
       this.renderChannelFeed(true);
+    } else if (this.currentRoute === '#gone-soon') {
+      this.renderGoneSoon(true);
     }
   },
 
   loadMoreIfNeeded() {
-    const isPaginatedBrowse = this.currentRoute === 'home' || this.currentRoute.startsWith('#channel/');
+    const isPaginatedBrowse = this.currentRoute === 'home' || this.currentRoute.startsWith('#channel/') || this.currentRoute === '#gone-soon';
     if (!isPaginatedBrowse || this.isLoading || !this.feedHasMore) return;
     if (!this.videoGrid.querySelector('.video-card')) return;
     if (document.documentElement.scrollHeight <= window.innerHeight) {
@@ -1203,11 +1252,12 @@ const App = {
       progressPercent = Math.min(100, (video.playback_position / video.duration) * 100);
     }
 
-    const uploadTimeAgo = this.formatRelativeTime(video.upload_date);
+    const title = cleanVideoTitle(video.title);
+    const uploadTimeAgo = this.formatUploadDate(video.upload_date);
 
     card.innerHTML = `
       <div class="thumbnail-box">
-        <img src="${thumbUrl}" loading="lazy" alt="${this.escapeHtml(video.title)}">
+        <img src="${thumbUrl}" loading="lazy" alt="${this.escapeHtml(title)}">
         <span class="duration-badge">${durStr}</span>
         ${video.watched ? `<span class="watched-badge">WATCHED</span>` : ''}
         ${progressPercent > 0 ? `<div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${progressPercent}%;"></div></div>` : ''}
@@ -1215,7 +1265,7 @@ const App = {
       <div class="video-meta">
         <div class="channel-avatar"></div>
         <div class="video-info">
-          <h3 class="video-title">${this.escapeHtml(video.title)}</h3>
+          <h3 class="video-title">${this.escapeHtml(title)}</h3>
           <div class="video-subtext">
             <span class="channel-link">${this.escapeHtml(video.channel_name)}</span> • ${uploadTimeAgo}
           </div>
@@ -1339,23 +1389,10 @@ const App = {
     }
   },
 
-  formatRelativeTime(dateStr) {
+  // Upload dates are stored as YYYY-MM-DD; returning the string as-is avoids the UTC shift of new Date().
+  formatUploadDate(dateStr) {
     if (!dateStr) return '';
-    try {
-      const date = new Date(dateStr);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-      if (diffDays <= 0) return 'Today';
-      if (diffDays === 1) return 'Yesterday';
-      if (diffDays < 7) return `${diffDays} days ago`;
-      if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-      if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
-      return `${Math.floor(diffDays / 365)} years ago`;
-    } catch {
-      return dateStr;
-    }
+    return String(dateStr).slice(0, 10);
   },
 
   formatDurationHuman(seconds) {

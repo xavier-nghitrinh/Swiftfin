@@ -101,6 +101,14 @@ The generator configures yt-dlp to use `www.youtube.com_cookies.txt` from this f
 
 The generated YouTube extractor options use `web_safari` and `web_embedded`, explicitly excluding `tv_downgraded`. This follows the workaround reported in [yt-dlp issue #17405](https://github.com/yt-dlp/yt-dlp/issues/17405) for intermittent `The page needs to be reloaded` errors. It is not guaranteed and can change which formats YouTube offers; check the resulting audio quality, especially for audio subscriptions.
 
+## Space-Based Cleanup
+
+After each run, `runner.py` calls MyTube's `POST /api/admin/cleanup`. If the `yt_video` folder is above `MYTUBE_MAX_MEDIA_GB` (default 200 GB), MyTube deletes the oldest YouTube videos by `upload_date` until the folder fits. Videos with no upload date are removed last. Music is not touched.
+
+Each deletion goes through Jellyfin's `DELETE /Items/{id}` first, so Jellyfin removes the item and its generated files. MyTube then removes leftover sidecar files, such as thumbnails, and hard-deletes the `videos` row. If Jellyfin refuses the delete, the files and the row are both kept, so nothing is left orphaned or listed but unplayable. The scan that runs before cleanup drops DB rows for items Jellyfin no longer has. The cleanup call has a 600-second timeout because deletes and folder size checks can be slow on a large library.
+
+The cleanup needs the media folder mounted at `MYTUBE_REMOTE_MEDIA_DIR` on the MyTube host. When that path is missing, cleanup is skipped and logged. The `gone-soon` tab in MyTube lists the videos that will be removed next, so you can watch them first.
+
 ## Per-Subscription Options
 
 The UI controls `mode` (`video` or `audio`), maximum resolution (`480`, `720`, `1080`, `1440`, `2160`), audio output (`m4a`, `mp3`, `flac`), voice language (optional; blank takes the default audio stream without filtering, while specific codes like `vi`, `en`, or `en, vi` select or mux preferred languages), subtitle language (optional; blank disables subtitle downloading, while codes like `vi`, `en`, or `en, vi` download and embed requested subtitles), minimum views, an optional title phrase, minimum duration in minutes, and the upload window in days. A title phrase matches case-insensitively and is combined with the minimum-view criterion, when set. The generated `match_filters` preset follows [ytdl-sub's preset configuration](https://ytdl-sub.readthedocs.io/en/latest/config_reference/config_yaml.html#presets) and [yt-dlp's filter syntax](https://github.com/yt-dlp/yt-dlp#filtering-formats). A zero-day window means no date cutoff. The default duration filter is five minutes and the default resolution is 1080p (or 480p for faster downloads).

@@ -271,16 +271,26 @@ def trigger_mytube_sync(mytube_url: str | None = None) -> bool:
         LOGGER.warning("Could not trigger MyTube scan at %s: %s", mytube_url, exc)
         return False
 
-    LOGGER.info("Triggering MyTube trash cleanup...")
+    LOGGER.info("Triggering MyTube space cleanup...")
     try:
         req = urllib.request.Request(
             f"{mytube_url}/api/admin/cleanup",
             method="POST",
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=15) as response:
+        # Each deletion goes through Jellyfin, so allow time for a full batch.
+        with urllib.request.urlopen(req, timeout=600) as response:
             if response.status == 200:
-                LOGGER.info("MyTube trash cleanup completed successfully.")
+                try:
+                    data = json.loads(response.read().decode("utf-8"))
+                    LOGGER.info(
+                        "MyTube space cleanup: status=%s, deleted=%d, failed=%d.",
+                        data.get("status"),
+                        len(data.get("deleted", [])),
+                        len(data.get("failed", [])),
+                    )
+                except Exception:
+                    LOGGER.info("MyTube space cleanup completed successfully.")
             else:
                 LOGGER.warning("MyTube cleanup returned status code: %s", response.status)
     except Exception as exc:

@@ -105,16 +105,17 @@ extension MPVMediaPlayer: VideoMediaPlayer {
         clearItem()
         loadedItem = item
 
+        // Interception must be enabled before loading, or mpv briefly shows native text for the default track.
+        textSubtitles.start(player) { [weak self] in
+            self?.loadedItem?.replaySubtitles?.refresh()
+        }
+
         player.load(
             item.url,
             playAutomatically: mediaSession?.playbackRequestStatus == .playing,
             startTime: item.baseItem.isLiveStream ? nil : item.baseItem.startSeconds
         )
         loadGeneration = player.generation
-
-        textSubtitles.start(player) { [weak self] in
-            self?.loadedItem?.replaySubtitles?.refresh()
-        }
 
         item.setTrackIndexes(.init())
         setRate(mediaSession?.rate ?? 1)

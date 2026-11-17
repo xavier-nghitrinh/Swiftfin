@@ -366,12 +366,27 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
                         remote_channel_poster = f"{REMOTE_MEDIA_DIR}/{channel_folder}/poster.jpg"
                         channel_thumb_tasks.append((channel_id, remote_channel_poster))
 
+        # Reconcile: a video whose Jellyfin item is gone (deleted in Jellyfin) is removed from SQLite so
+        # MyTube does not list an unplayable file. Skipped for an empty or full (possibly truncated) page,
+        # since get_library_items fetches at most 5000 items and a short read must not wipe rows.
+        removed_videos = 0
+        if jellyfin_items and len(jellyfin_items) < 5000:
+            jellyfin_ids = {item["Id"] for item in jellyfin_items}
+            cursor.execute("SELECT video_id, jellyfin_item_id FROM videos WHERE jellyfin_item_id IS NOT NULL AND jellyfin_item_id != ''")
+            stale = [r for r in cursor.fetchall() if r["jellyfin_item_id"] not in jellyfin_ids]
+            for r in stale:
+                cursor.execute("DELETE FROM user_progress WHERE media_id = ? AND media_type = 'youtube'", (r["video_id"],))
+                cursor.execute("DELETE FROM videos WHERE video_id = ?", (r["video_id"],))
+            removed_videos = len(stale)
+            if removed_videos:
+                logger.info(f"Removed {removed_videos} videos no longer present in Jellyfin.")
+
         conn.commit()
 
     cached_thumbs = sync_missing_thumbnails_to_sqlite(video_thumb_tasks, channel_thumb_tasks)
         
     logger.info(
-        f"YouTube Scan complete: {synced_videos} videos ({new_videos} new, {updated_videos} updated), "
+        f"YouTube Scan complete: {synced_videos} videos ({new_videos} new, {updated_videos} updated, {removed_videos} removed), "
         f"{len(processed_channels)} channels ({synced_channels} new), {cached_thumbs} Base64 thumbnails cached."
     )
 
@@ -383,6 +398,7 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
         "synced_videos": synced_videos,
         "new_videos": new_videos,
         "updated_videos": updated_videos,
+        "removed_videos": removed_videos,
         "synced_channels": len(processed_channels),
         "new_channels": synced_channels,
         "cached_thumbnails": cached_thumbs,

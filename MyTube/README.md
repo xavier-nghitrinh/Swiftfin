@@ -41,6 +41,9 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
    - Channel subscriptions are per user; the home feed and search only show videos from channels you subscribe to. Movies and shows are shared.
    - Delete permanently with one click (`DELETE /api/videos/{id}`).
 
+5. **Gone soon:**
+   - The bin tab (web and tvOS) lists your subscribed YouTube videos oldest first by `upload_date`, loaded in batches as you scroll (`GET /api/gone-soon`). These are the videos the space cleanup removes next.
+
 ---
 
 ## How to Run
@@ -94,7 +97,9 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 ### 3. Automated Scraper Sync
 When `youtube_scrapper/runner.py` finishes downloading new videos, it automatically:
 1. Calls Jellyfin library refresh.
-2. Calls `http://127.0.0.1:8000/api/admin/scan` to index new videos into MyTube SQLite.
+2. Calls `http://127.0.0.1:8000/api/admin/scan` to index new videos into MyTube SQLite. The scan also removes DB rows for items no longer in Jellyfin, so a file deleted elsewhere cannot stay listed but unplayable.
+3. Calls `http://127.0.0.1:8000/api/admin/cleanup` to free space (see the scraper README).
 
 curl -X POST http://127.0.0.1:8000/api/admin/scan
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/admin/scan
+curl -X POST http://127.0.0.1:8000/api/admin/cleanup

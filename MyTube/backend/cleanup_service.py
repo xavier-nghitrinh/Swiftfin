@@ -1,15 +1,57 @@
 import logging
-from typing import Dict, Any
+import os
+import re
+from typing import Dict, Any, List
+from backend.config import MAX_MEDIA_GB, REMOTE_MEDIA_DIR
 from backend.database import get_db, now_iso, find_media_item
 from backend.jellyfin_client import jellyfin
-import os
 
 logger = logging.getLogger("mytube.cleanup")
 
+SIDECAR_SUFFIXES = (".info.json", ".nfo", ".jpg", ".webp", "-thumb.jpg")
+SUBTITLE_PATTERN = r"\.[\w-]+\.(vtt|srt|ass)"
+
+def _related_files(file_path: str) -> List[str]:
+    """Existing files that belong to a YouTube video: the media file plus its sidecars and subtitles."""
+    directory, filename = os.path.split(file_path)
+    if not directory or not os.path.isdir(directory):
+        return []
+    stem = os.path.splitext(filename)[0]
+    names = {filename, *(f"{stem}{suffix}" for suffix in SIDECAR_SUFFIXES)}
+    subtitle_re = re.compile(re.escape(stem) + SUBTITLE_PATTERN)
+    found = []
+    for name in os.listdir(directory):
+        if name in names or subtitle_re.fullmatch(name):
+            found.append(os.path.join(directory, name))
+    return found
+
+def _size_of(paths: List[str]) -> int:
+    total = 0
+    for p in paths:
+        try:
+            total += os.path.getsize(p)
+        except OSError:
+            pass
+    return total
+
+def _folder_size(root: str) -> int:
+    total = 0
+    for dirpath, _dirnames, filenames in os.walk(root, onerror=lambda _e: None):
+        for name in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, name))
+            except OSError:
+                pass
+    return total
+
 class CleanupService:
     @staticmethod
-    def delete_permanently(video_id: str) -> Dict[str, Any]:
-        """Delete an item through Jellyfin and remove any local sidecar files."""
+    def delete_permanently(video_id: str, refresh_library: bool = True) -> Dict[str, Any]:
+        """Delete an item through Jellyfin, then remove its local files and database rows.
+
+        Jellyfin goes first: if it refuses, nothing local is touched. Videos are hard-deleted
+        from SQLite so MyTube stops listing them; movies and episodes keep a 'deleted' tombstone.
+        """
         with get_db() as conn:
             cursor = conn.cursor()
             media, media_type = find_media_item(cursor, video_id)
@@ -28,18 +70,15 @@ class CleanupService:
             logger.error("Jellyfin could not delete %s %s; leaving it available in MyTube", media_type, video_id)
             return {"status": "error", "message": "Jellyfin could not delete the media item"}
 
-        # 2. Clean up sidecar files (.info.json, .nfo, .jpg)
+        # 2. Remove leftovers Jellyfin does not own (sidecars, thumbnails, subtitles) so nothing is orphaned
         if file_path:
-            base_path = os.path.splitext(file_path)[0]
-            for ext in (".info.json", ".nfo", ".jpg", ".webp"):
-                p = f"{base_path}{ext}"
+            for p in _related_files(file_path):
                 try:
-                    if os.path.exists(p):
-                        os.remove(p)
+                    os.remove(p)
                 except Exception as e:
-                    logger.warning(f"Failed to delete local sidecar {p}: {e}")
+                    logger.warning(f"Failed to delete local file {p}: {e}")
 
-        # 3. Mark as deleted in SQLite
+        # 3. Update SQLite
         now = now_iso()
         with get_db() as conn:
             cursor = conn.cursor()
@@ -48,10 +87,67 @@ class CleanupService:
             elif media_type == "episode":
                 cursor.execute("UPDATE episodes SET file_status = 'deleted', updated_at = ? WHERE episode_id = ?", (now, video_id))
             else:
-                cursor.execute("UPDATE videos SET file_status = 'deleted', updated_at = ? WHERE video_id = ?", (now, video_id))
+                cursor.execute("DELETE FROM user_progress WHERE media_id = ? AND media_type = 'youtube'", (video_id,))
+                cursor.execute("DELETE FROM videos WHERE video_id = ?", (video_id,))
             conn.commit()
 
-        # 4. Trigger Jellyfin library refresh
-        jellyfin.trigger_refresh()
+        if refresh_library:
+            jellyfin.trigger_refresh()
 
         return {"status": "ok", "video_id": video_id, "media_type": media_type, "action": "permanently_deleted"}
+
+    @staticmethod
+    def run_space_cleanup() -> Dict[str, Any]:
+        """Delete the oldest available YouTube videos until the media folder fits in MAX_MEDIA_GB.
+
+        Candidates are ordered by upload_date (oldest first, unknown dates last). Each one goes through
+        delete_permanently, so Jellyfin removes the files and SQLite drops the row.
+        """
+        limit_bytes = int(MAX_MEDIA_GB * 1024 ** 3)
+        root = REMOTE_MEDIA_DIR
+        if not os.path.isdir(root):
+            logger.warning(f"Space cleanup skipped: media folder not found at {root}")
+            return {"status": "skipped", "reason": "media folder not found", "path": root}
+
+        used = _folder_size(root)
+        result: Dict[str, Any] = {
+            "status": "ok",
+            "used_bytes": used,
+            "limit_bytes": limit_bytes,
+            "deleted": [],
+            "failed": [],
+        }
+        if used <= limit_bytes:
+            result["final_bytes"] = used
+            return result
+
+        with get_db() as conn:
+            candidates = conn.execute("""
+                SELECT video_id, title, file_path FROM videos
+                WHERE file_status = 'available'
+                  AND jellyfin_item_id IS NOT NULL AND jellyfin_item_id != ''
+                  AND file_path IS NOT NULL AND file_path != ''
+                ORDER BY (upload_date IS NULL), upload_date ASC, created_at ASC, video_id ASC
+            """).fetchall()
+
+        logger.info(f"Space cleanup: {used / 1024 ** 3:.1f} GiB used, limit {MAX_MEDIA_GB:g} GiB")
+        for row in candidates:
+            if used <= limit_bytes:
+                break
+            freed = _size_of(_related_files(row["file_path"]))
+            res = CleanupService.delete_permanently(row["video_id"], refresh_library=False)
+            if res.get("status") == "ok":
+                used -= freed
+                result["deleted"].append(row["video_id"])
+            else:
+                result["failed"].append({"video_id": row["video_id"], "message": res.get("message")})
+
+        if result["deleted"]:
+            jellyfin.trigger_refresh()
+
+        result["final_bytes"] = _folder_size(root)
+        logger.info(
+            f"Space cleanup finished: deleted {len(result['deleted'])}, failed {len(result['failed'])}, "
+            f"now {result['final_bytes'] / 1024 ** 3:.1f} GiB"
+        )
+        return result

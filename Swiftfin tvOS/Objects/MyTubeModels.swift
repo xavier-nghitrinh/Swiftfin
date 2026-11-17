@@ -123,6 +123,17 @@ struct MyTubeVideo: Identifiable, Hashable, Codable, Sendable {
         }
     }
 
+    /// Title without the scraper's "sYYYY.mmddxx - " or "YYYY-MM-DD - " prefix.
+    var displayTitle: String {
+        let stripped = title.replacingOccurrences(
+            of: #"^(?:s\d{4}\.\d{4}\S*|\d{4}-\d{2}-\d{2})\s*-\s*"#,
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped.isEmpty ? title : stripped
+    }
+
     var formattedUploadDate: String {
         guard let uploadDate, !uploadDate.isEmpty else { return "" }
         if uploadDate.count == 8, uploadDate.allSatisfy(\.isNumber) {

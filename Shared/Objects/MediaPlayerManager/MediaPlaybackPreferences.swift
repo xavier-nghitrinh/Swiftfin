@@ -41,11 +41,7 @@ struct MediaPlaybackPreferences {
 
         return Selection(
             audio: audioIndex,
-            subtitle: explicitSubtitle ?? preferredSubtitle(
-                in: subtitles,
-                defaultIndex: source.defaultSubtitleStreamIndex,
-                audioLanguage: audioLanguage
-            )
+            subtitle: explicitSubtitle ?? preferredSubtitle(in: subtitles, audioLanguage: audioLanguage)
         )
     }
 
@@ -70,9 +66,10 @@ struct MediaPlaybackPreferences {
         )?.index
     }
 
-    private func preferredSubtitle(in streams: [MediaStream], defaultIndex: Int?, audioLanguage: String?) -> Int? {
+    /// The server's default subtitle is ignored so playback starts without one unless the user's caption settings choose a track.
+    private func preferredSubtitle(in streams: [MediaStream], audioLanguage: String?) -> Int? {
         // Missing stream metadata can be filled by the playback-info response. Leave negotiation to the server.
-        guard streams.isNotEmpty else { return defaultIndex }
+        guard streams.isNotEmpty else { return nil }
 
         let preferredLanguages = captions.selectedLanguages.isEmpty ? languages : captions.selectedLanguages
         let forced = streams.filter { $0.isForced == true }
@@ -81,7 +78,7 @@ struct MediaPlaybackPreferences {
         let forcedIndex = best(
             in: forced.filter { languageRank($0.language, in: forcedLanguages) != nil },
             languages: forcedLanguages,
-            defaultIndex: defaultIndex
+            defaultIndex: nil
         )?.index ?? -1
 
         switch captions.displayType {
@@ -89,27 +86,22 @@ struct MediaPlaybackPreferences {
             return forcedIndex
 
         case .alwaysOn:
-            return best(in: streams.filter { $0.isForced != true }, languages: preferredLanguages, defaultIndex: defaultIndex)?.index
+            return best(in: streams.filter { $0.isForced != true }, languages: preferredLanguages, defaultIndex: nil)?.index
                 ?? forcedIndex
 
         case .automatic:
-            // Honor the account's subtitle mode and remembered selections when it provides a track.
-            if let defaultIndex, streams.contains(where: { $0.index == defaultIndex }) {
-                return defaultIndex
-            }
-
             guard let audioLanguage,
                   let primaryLanguage = preferredLanguages.first,
                   let audioCode = languageCode(audioLanguage),
                   let preferredCode = languageCode(primaryLanguage)
-            else { return defaultIndex }
+            else { return nil }
             guard audioCode != preferredCode else { return forcedIndex }
 
             let candidates = streams.filter { $0.isForced != true && languageRank($0.language, in: preferredLanguages) != nil }
-            return best(in: candidates, languages: preferredLanguages, defaultIndex: defaultIndex)?.index ?? forcedIndex
+            return best(in: candidates, languages: preferredLanguages, defaultIndex: nil)?.index ?? forcedIndex
 
         case .unknown:
-            return defaultIndex
+            return nil
         }
     }
 

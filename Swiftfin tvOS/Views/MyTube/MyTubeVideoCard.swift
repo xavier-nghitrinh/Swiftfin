@@ -17,7 +17,7 @@ enum MyTubeTileMetrics {
     static let width: CGFloat = 420
     static let aspectRatio: CGFloat = 16.0 / 9.0
     static let cornerRadius: CGFloat = 12
-    static let titleHeight: CGFloat = 42
+    static let titleHeight: CGFloat = 64
     static let metadataHeight: CGFloat = 18
     static let horizontalSpacing: CGFloat = 30
     static let focusBorderWidth: CGFloat = 4
@@ -141,7 +141,7 @@ struct MyTubeVideoCard: View {
                 MyTubeThumbnailView(video: video, isFocused: isFocused)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(video.title)
+                    Text(video.displayTitle)
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(.primary)
