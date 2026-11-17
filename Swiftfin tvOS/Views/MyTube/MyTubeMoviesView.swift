@@ -14,6 +14,12 @@ import SwiftUI
 
 struct MyTubeMoviesView: View {
 
+    let isActive: Bool
+
+    init(isActive: Bool = false) {
+        self.isActive = isActive
+    }
+
     @State
     private var data: MyTubeMoviesHome?
 
@@ -92,6 +98,12 @@ struct MyTubeMoviesView: View {
         }
         .task {
             if data == nil {
+                await loadMovies()
+            }
+        }
+        .onChange(of: isActive) { _, active in
+            guard active else { return }
+            Task { @MainActor in
                 await loadMovies()
             }
         }

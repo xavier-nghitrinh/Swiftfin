@@ -15,8 +15,17 @@ struct MyTubeFeedView: View {
     @Router
     private var router
 
-    @State
+    @AppStorage("myTubeUnwatchedOnly")
     private var unplayedOnly: Bool = true
+
+    let isActive: Bool
+
+    init(isActive: Bool = false) {
+        self.isActive = isActive
+    }
+
+    @State
+    private var continueWatching: [MyTubeVideo] = []
 
     @State
     private var videos: [MyTubeVideo] = []
@@ -47,6 +56,10 @@ struct MyTubeFeedView: View {
         errorMessage = nil
 
         let currentOffset = reset ? 0 : offset
+
+        if reset {
+            continueWatching = (try? await MyTubeClient.shared.getContinueWatching())?.items ?? []
+        }
 
         do {
             let res = try await MyTubeClient.shared.getHomeFeed(
@@ -185,7 +198,6 @@ struct MyTubeFeedView: View {
                     .padding(.vertical, 80)
                 }
 
-                let continueWatching = videos.filter(\.isPartiallyWatched)
                 if !continueWatching.isEmpty {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Continue Watching")
@@ -239,7 +251,11 @@ struct MyTubeFeedView: View {
             .padding(.bottom, 60)
         }
         .task {
-            if videos.isEmpty {
+            await loadFeed(reset: true)
+        }
+        .onChange(of: isActive) { _, active in
+            guard active else { return }
+            Task { @MainActor in
                 await loadFeed(reset: true)
             }
         }

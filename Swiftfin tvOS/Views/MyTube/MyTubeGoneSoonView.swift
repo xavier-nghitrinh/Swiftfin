@@ -12,6 +12,15 @@ import SwiftUI
 
 struct MyTubeGoneSoonView: View {
 
+    @AppStorage("myTubeUnwatchedOnly")
+    private var unplayedOnly: Bool = true
+
+    let isActive: Bool
+
+    init(isActive: Bool = false) {
+        self.isActive = isActive
+    }
+
     @State
     private var videos: [MyTubeVideo] = []
 
@@ -42,6 +51,7 @@ struct MyTubeGoneSoonView: View {
 
         do {
             let res = try await MyTubeClient.shared.getGoneSoon(
+                unplayedOnly: unplayedOnly,
                 limit: pageSize,
                 offset: currentOffset
             )
@@ -82,6 +92,34 @@ struct MyTubeGoneSoonView: View {
                     }
 
                     Spacer()
+
+                    HStack(spacing: 12) {
+                        Button {
+                            unplayedOnly = true
+                            Task { await loadPage(reset: true) }
+                        } label: {
+                            Text("Unwatched")
+                                .font(.callout)
+                                .fontWeight(unplayedOnly ? .bold : .regular)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(unplayedOnly ? Color.red : Color(white: 0.25))
+
+                        Button {
+                            unplayedOnly = false
+                            Task { await loadPage(reset: true) }
+                        } label: {
+                            Text("All Videos")
+                                .font(.callout)
+                                .fontWeight(!unplayedOnly ? .bold : .regular)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(!unplayedOnly ? Color.red : Color(white: 0.25))
+                    }
                 }
                 .padding(.horizontal, 50)
                 .padding(.top, 20)
@@ -146,7 +184,11 @@ struct MyTubeGoneSoonView: View {
             .padding(.bottom, 60)
         }
         .task {
-            if videos.isEmpty {
+            await loadPage(reset: true)
+        }
+        .onChange(of: isActive) { _, active in
+            guard active else { return }
+            Task { @MainActor in
                 await loadPage(reset: true)
             }
         }

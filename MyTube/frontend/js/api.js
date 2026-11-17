@@ -101,10 +101,21 @@ const api = {
     return await res.json();
   },
 
-  async getGoneSoon(limit = 10, offset = 0) {
-    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+  async getGoneSoon(limit = 10, offset = 0, unplayedOnly = true) {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+      unplayed_only: unplayedOnly ? 'true' : 'false'
+    });
     const res = await this.request(`${API_BASE}/gone-soon?${params}`);
     if (!res.ok) throw new Error(`Failed to fetch gone-soon videos: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getContinueWatching(limit = 50, offset = 0) {
+    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+    const res = await this.request(`${API_BASE}/continue-watching?${params}`);
+    if (!res.ok) throw new Error(`Failed to fetch continue watching: ${res.statusText}`);
     return await res.json();
   },
 

@@ -101,10 +101,20 @@ def get_home_feed(
 def get_gone_soon(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    unplayed_only: bool = Query(True),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Subscribed videos oldest first: the ones the automatic space cleanup will delete next."""
-    return FeedService.get_gone_soon(user["user_id"], limit=limit, offset=offset)
+    return FeedService.get_gone_soon(user["user_id"], limit=limit, offset=offset, unplayed_only=unplayed_only)
+
+@app.get("/api/continue-watching")
+def get_continue_watching(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Partly watched videos from any screen (subscriptions, channels, gone soon), most recently played first."""
+    return FeedService.get_continue_watching(user["user_id"], limit=limit, offset=offset)
 
 @app.get("/api/channels")
 def get_channels(
@@ -135,7 +145,7 @@ def set_channel_subscription(
 @app.get("/api/channels/{channel_id}/videos")
 def get_channel_videos(
     channel_id: str,
-    filter_type: str = Query("all", pattern="^(all|unwatched|watched)$"),
+    filter_type: str = Query("all", pattern="^(all|unwatched)$"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     user: Dict[str, Any] = Depends(get_current_user),

@@ -8,23 +8,18 @@ const App = {
   currentRoute: 'home',
   previousRouteHash: '#home',
   routeHistory: [],
-  lastBrowseHash: null,
-  savedBrowseScrollY: 0,
-  hasBrowseDom: false,
   currentChannelId: null,
   currentWatchVideoId: null,
   currentWatchData: null,
   upNextSource: 'feed', // 'feed' or 'channel'
-  channelFilter: 'all', // 'all', 'unwatched', 'watched'
   channelSubscriptionFilter: 'all', // 'all', 'subscribed', 'unsubscribed'
-  feedUnplayedOnly: true,
+  youtubeUnwatchedOnly: true, // Shared Unwatched / All Videos toggle for Subscriptions, Channel and Gone soon
   searchQuery: '',
 
   // Pagination
   feedOffset: 0,
   feedLimit: 10,
   feedHasMore: true,
-  feedVideos: [],
   isLoading: false,
 
   // Popover state
@@ -40,8 +35,6 @@ const App = {
   movieDetailsView: null,
   showsView: null,
   showDetailsView: null,
-  headerMoviesBtn: null,
-  headerShowsBtn: null,
   headerBackBtn: null,
   videoGrid: null,
   continueWatchingShelf: null,
@@ -68,8 +61,6 @@ const App = {
     this.movieDetailsView = document.getElementById('movie-details-view');
     this.showsView = document.getElementById('shows-view');
     this.showDetailsView = document.getElementById('show-details-view');
-    this.headerMoviesBtn = document.getElementById('header-movies-btn');
-    this.headerShowsBtn = document.getElementById('header-shows-btn');
     this.headerBackBtn = document.getElementById('header-back-btn');
     this.videoGrid = document.getElementById('video-grid');
     this.continueWatchingShelf = document.getElementById('feed-continue-watching');
@@ -100,24 +91,14 @@ const App = {
   },
 
   bindEvents() {
-    // Logo click returns to home
+    // Logo click returns to home; when already on home, reload it so the feed is fresh
     document.getElementById('logo-btn').addEventListener('click', () => {
-      window.location.hash = '#home';
+      if ((window.location.hash || '#home') === '#home') {
+        this.handleRoute(true);
+      } else {
+        window.location.hash = '#home';
+      }
     });
-
-    // Movies logo button
-    if (this.headerMoviesBtn) {
-      this.headerMoviesBtn.addEventListener('click', () => {
-        window.location.hash = '#movies';
-      });
-    }
-
-    // Shows logo button
-    if (this.headerShowsBtn) {
-      this.headerShowsBtn.addEventListener('click', () => {
-        window.location.hash = '#shows';
-      });
-    }
 
     // Header back button
     this.headerBackBtn.addEventListener('click', () => {
@@ -178,8 +159,7 @@ const App = {
         await api.markWatched(video.video_id);
         video.watched = 1;
         this.showToast('Marked as watched');
-        if (this.currentRoute === 'home' && this.feedUnplayedOnly && cardEl) {
-          this.feedVideos = this.feedVideos.filter((item) => item.video_id !== video.video_id);
+        if (this.currentRoute === 'home' && this.youtubeUnwatchedOnly && cardEl) {
           document.getElementById(`video-card-${video.video_id}`)?.remove();
           document.getElementById(`continue-video-card-${video.video_id}`)?.remove();
           this.renderContinueWatchingShelf();
@@ -208,10 +188,6 @@ const App = {
     window.addEventListener('scroll', () => {
       if (this.popoverMenu.classList.contains('active')) {
         this.hidePopover();
-      }
-      const hash = window.location.hash || '#home';
-      if (!hash.startsWith('#watch/') && this.browseView.style.display !== 'none') {
-        this.savedBrowseScrollY = window.scrollY;
       }
     }, { passive: true });
 
@@ -351,8 +327,6 @@ const App = {
     if (Player.isActive) Player.stop();
     this.hidePopover();
     this.routeHistory = [];
-    this.hasBrowseDom = false;
-    this.feedVideos = [];
     this.currentWatchData = null;
     this.currentWatchVideoId = null;
     this.currentRoute = 'home';
@@ -490,8 +464,8 @@ const App = {
   async updateStats() {
     try {
       const stats = await api.getStats();
-      if (stats.unwatched_videos > 0) {
-        this.badgeUnwatched.textContent = stats.unwatched_videos > 99 ? '99+' : stats.unwatched_videos;
+      if (stats.unwatched_recent_videos > 0) {
+        this.badgeUnwatched.textContent = stats.unwatched_recent_videos > 99 ? '99+' : stats.unwatched_recent_videos;
         this.badgeUnwatched.style.display = 'inline-block';
       } else {
         this.badgeUnwatched.style.display = 'none';
@@ -507,11 +481,6 @@ const App = {
     if (target) target.classList.add('active');
   },
 
-  updateHeaderModeNav(mode) {
-    if (this.headerMoviesBtn) this.headerMoviesBtn.classList.toggle('active', mode === 'movies');
-    if (this.headerShowsBtn) this.headerShowsBtn.classList.toggle('active', mode === 'shows');
-  },
-
   handleRoute(forceReload = false) {
     if (!api.getUserId()) {
       if (!document.body.classList.contains('user-select-active')) this.showUserSelection();
@@ -519,7 +488,6 @@ const App = {
     }
 
     const hash = window.location.hash || '#home';
-    const wasWatching = String(this.currentRoute).startsWith('#watch/');
     this.hidePopover();
 
     // Track route history
@@ -566,7 +534,6 @@ const App = {
       hideAllViews();
       this.currentRoute = 'movies';
       this.setActiveNav('nav-movies');
-      this.updateHeaderModeNav('movies');
       if (this.moviesView) this.moviesView.style.display = 'block';
       window.scrollTo(0, 0);
       this.renderMoviesHome(forceReload);
@@ -579,7 +546,6 @@ const App = {
       this.currentRoute = hash;
       const movieId = decodeURIComponent(hash.slice('#movie/'.length));
       this.setActiveNav('nav-movies');
-      this.updateHeaderModeNav('movies');
       if (this.movieDetailsView) this.movieDetailsView.style.display = 'block';
       window.scrollTo(0, 0);
       this.renderMovieDetail(movieId);
@@ -591,7 +557,6 @@ const App = {
       hideAllViews();
       this.currentRoute = 'shows';
       this.setActiveNav('nav-shows');
-      this.updateHeaderModeNav('shows');
       if (this.showsView) this.showsView.style.display = 'block';
       window.scrollTo(0, 0);
       this.renderShowsHome(forceReload);
@@ -604,68 +569,15 @@ const App = {
       this.currentRoute = hash;
       const showId = decodeURIComponent(hash.slice('#show/'.length));
       this.setActiveNav('nav-shows');
-      this.updateHeaderModeNav('shows');
       if (this.showDetailsView) this.showDetailsView.style.display = 'block';
       window.scrollTo(0, 0);
       this.renderShowDetail(showId);
       return;
     }
 
-    // 6. YouTube Browse Views (Home, Channels, Channel, Search)
+    // 6. YouTube Browse Views (Home, Channels, Channel, Search); always reloaded on entry
     hideAllViews();
     this.browseView.style.display = 'block';
-    this.updateHeaderModeNav('youtube');
-
-    // If returning from Watch View to the exact same Browse page, keep existing DOM & restore scroll position
-    if (!forceReload && wasWatching && this.hasBrowseDom && this.lastBrowseHash === hash) {
-      if (hash.startsWith('#channel/')) {
-        this.currentRoute = hash;
-        this.setActiveNav('nav-channels');
-      } else if (hash === '#channels') {
-        this.currentRoute = 'channels';
-        this.setActiveNav('nav-channels');
-      } else if (hash === '#gone-soon') {
-        this.currentRoute = hash;
-        this.setActiveNav('nav-gone');
-      } else if (hash.startsWith('#search')) {
-        this.currentRoute = 'search';
-      } else {
-        this.currentRoute = 'home';
-        this.setActiveNav('nav-home');
-      }
-
-      // Update or remove the card in-place if its watched state changed while watching
-      if (this.currentWatchData?.watched && hash === '#home') {
-        const cardEl = document.getElementById(`video-card-${this.currentWatchData.video_id}`);
-        const videoId = this.currentWatchData.video_id;
-        this.feedVideos = this.feedVideos.map((video) =>
-          video.video_id === videoId ? { ...video, watched: 1 } : video
-        );
-        document.getElementById(`continue-video-card-${videoId}`)?.remove();
-        if (this.feedUnplayedOnly) {
-          cardEl?.remove();
-          this.feedVideos = this.feedVideos.filter((video) => video.video_id !== videoId);
-        } else if (cardEl && !cardEl.querySelector('.watched-badge')) {
-          const thumbBox = cardEl.querySelector('.thumbnail-box');
-          if (thumbBox) {
-            const badge = document.createElement('span');
-            badge.className = 'watched-badge';
-            badge.textContent = 'WATCHED';
-            thumbBox.appendChild(badge);
-          }
-        }
-        this.renderContinueWatchingShelf();
-      }
-
-      const targetY = this.savedBrowseScrollY || 0;
-      window.scrollTo(0, targetY);
-      requestAnimationFrame(() => window.scrollTo(0, targetY));
-      return;
-    }
-
-    this.lastBrowseHash = hash;
-    this.savedBrowseScrollY = 0;
-    this.hasBrowseDom = true;
     this.channelHeaderAvatar.style.display = 'none';
     window.scrollTo(0, 0);
 
@@ -865,14 +777,13 @@ const App = {
       this.videoGrid.style.display = 'grid';
       this.channelList.style.display = 'none';
       this.videoGrid.innerHTML = '';
-      this.feedVideos = [];
       this.renderContinueWatchingShelf();
-      this.renderFeedChips();
+      this.renderUnwatchedToggle();
     }
 
     this.showLoading(true);
     try {
-      const data = await api.getHomeFeed(this.feedLimit, this.feedOffset, this.feedUnplayedOnly);
+      const data = await api.getHomeFeed(this.feedLimit, this.feedOffset, this.youtubeUnwatchedOnly);
       this.feedHasMore = data.has_more;
 
       if (!append && data.items.length === 0) {
@@ -880,11 +791,9 @@ const App = {
       } else {
         this.showEmpty(false);
         const batch = this.shuffleItems(data.items);
-        this.feedVideos.push(...batch);
         batch.forEach((video) => {
           this.videoGrid.appendChild(this.createVideoCard(video));
         });
-        this.renderContinueWatchingShelf();
         shouldCheckAutoLoad = batch.length > 0;
       }
     } catch (err) {
@@ -906,18 +815,23 @@ const App = {
     return shuffled;
   },
 
-  renderContinueWatchingShelf() {
+  async renderContinueWatchingShelf() {
     if (!this.continueWatchingShelf || !this.continueWatchingTrack) return;
-    this.syncContinueWatchingCardWidth();
-    const videos = this.feedVideos.filter((video) =>
-      !video.watched && Number(video.playback_position) > 5
-    );
+    let items = [];
+    try {
+      const data = await api.getContinueWatching();
+      items = data.items || [];
+    } catch (err) {
+      console.error('Failed to load continue watching:', err);
+    }
+    if (this.currentRoute !== 'home') return;
 
     this.continueWatchingTrack.innerHTML = '';
-    this.continueWatchingShelf.style.display = videos.length > 0 ? 'block' : 'none';
-    videos.forEach((video) => {
+    this.continueWatchingShelf.style.display = items.length > 0 ? 'block' : 'none';
+    items.forEach((video) => {
       this.continueWatchingTrack.appendChild(this.createVideoCard(video, 'continue-video-card-'));
     });
+    this.syncContinueWatchingCardWidth();
   },
 
   syncContinueWatchingCardWidth() {
@@ -929,23 +843,33 @@ const App = {
     }
   },
 
-  renderFeedChips() {
+  // Shared Unwatched / All Videos toggle for Subscriptions, Channel and Gone soon screens
+  renderUnwatchedToggle(noteHtml = '') {
     this.filterChips.innerHTML = `
-      <div class="chip ${this.feedUnplayedOnly ? 'active' : ''}" id="chip-unwatched">Unwatched</div>
-      <div class="chip ${!this.feedUnplayedOnly ? 'active' : ''}" id="chip-all">All Videos</div>
+      ${noteHtml}
+      <div class="chip ${this.youtubeUnwatchedOnly ? 'active' : ''}" data-unwatched="true">Unwatched</div>
+      <div class="chip ${!this.youtubeUnwatchedOnly ? 'active' : ''}" data-unwatched="false">All Videos</div>
     `;
 
-    document.getElementById('chip-unwatched').addEventListener('click', () => {
-      this.feedUnplayedOnly = true;
-      this.feedOffset = 0;
-      this.renderHomeFeed();
+    this.filterChips.querySelectorAll('.chip[data-unwatched]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const unwatchedOnly = chip.dataset.unwatched === 'true';
+        if (unwatchedOnly === this.youtubeUnwatchedOnly) return;
+        this.youtubeUnwatchedOnly = unwatchedOnly;
+        this.reloadYoutubeList();
+      });
     });
+  },
 
-    document.getElementById('chip-all').addEventListener('click', () => {
-      this.feedUnplayedOnly = false;
-      this.feedOffset = 0;
+  reloadYoutubeList() {
+    this.feedOffset = 0;
+    if (this.currentRoute === 'home') {
       this.renderHomeFeed();
-    });
+    } else if (this.currentRoute.startsWith('#channel/')) {
+      this.renderChannelFeed();
+    } else if (this.currentRoute === '#gone-soon') {
+      this.renderGoneSoon();
+    }
   },
 
   // =========================================================
@@ -1066,7 +990,7 @@ const App = {
       this.videoGrid.style.display = 'grid';
       this.channelList.style.display = 'none';
       this.videoGrid.innerHTML = '';
-      this.renderChannelChips();
+      this.renderUnwatchedToggle();
     }
 
     this.showLoading(true);
@@ -1089,7 +1013,7 @@ const App = {
 
       const data = await api.getChannelVideos(
         this.currentChannelId,
-        this.channelFilter,
+        this.youtubeUnwatchedOnly ? 'unwatched' : 'all',
         this.feedLimit,
         this.feedOffset
       );
@@ -1114,22 +1038,6 @@ const App = {
     }
   },
 
-  renderChannelChips() {
-    this.filterChips.innerHTML = `
-      <div class="chip ${this.channelFilter === 'all' ? 'active' : ''}" data-filter="all">All</div>
-      <div class="chip ${this.channelFilter === 'unwatched' ? 'active' : ''}" data-filter="unwatched">Unwatched</div>
-      <div class="chip ${this.channelFilter === 'watched' ? 'active' : ''}" data-filter="watched">Watched</div>
-    `;
-
-    this.filterChips.querySelectorAll('.chip').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        this.channelFilter = chip.dataset.filter;
-        this.feedOffset = 0;
-        this.renderChannelFeed();
-      });
-    });
-  },
-
   // =========================================================
   // 3b. Gone Soon View (oldest subscribed videos, next to be cleaned up)
   // =========================================================
@@ -1137,7 +1045,7 @@ const App = {
     let shouldCheckAutoLoad = false;
     if (!append) {
       this.viewTitle.textContent = 'Gone soon';
-      this.filterChips.innerHTML = '<div class="gone-soon-note">Oldest subscribed videos. They are deleted automatically when storage is full.</div>';
+      this.renderUnwatchedToggle('<div class="gone-soon-note">Oldest subscribed videos. They are deleted automatically when storage is full.</div>');
       this.videoGrid.style.display = 'grid';
       this.channelList.style.display = 'none';
       this.videoGrid.innerHTML = '';
@@ -1146,7 +1054,7 @@ const App = {
 
     this.showLoading(true);
     try {
-      const data = await api.getGoneSoon(this.feedLimit, this.feedOffset);
+      const data = await api.getGoneSoon(this.feedLimit, this.feedOffset, this.youtubeUnwatchedOnly);
       this.feedHasMore = data.has_more;
 
       if (!append && data.items.length === 0) {
@@ -1305,7 +1213,6 @@ const App = {
 
     // Click thumbnail or title to open YouTube Watch View or Movie/Show Info
     const handleCardClick = () => {
-      this.savedBrowseScrollY = window.scrollY;
       if (video.media_type === 'movie') {
         window.location.hash = `#movie/${encodeURIComponent(video.video_id)}`;
       } else if (video.media_type === 'show') {
@@ -1480,7 +1387,6 @@ const App = {
 
     card.addEventListener('click', () => {
       if (!itemId) return;
-      this.savedBrowseScrollY = window.scrollY;
       if (clickRoute) {
         window.location.hash = clickRoute;
       } else if (item.media_type === 'movie') {

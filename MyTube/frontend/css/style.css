@@ -1291,52 +1291,6 @@ video {
 }
 
 /* ==========================================================================
-   Header App Mode Logos (MyMovies & MyShows)
-   ========================================================================== */
-.header-mode-nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 6px;
-}
-
-.header-logo-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  padding: 0;
-  color: var(--text-main);
-}
-
-.header-logo-btn:hover {
-  background: var(--bg-hover);
-  transform: scale(1.05);
-}
-
-.header-logo-btn.active {
-  background: var(--bg-card);
-  border-color: var(--border-color);
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.08);
-}
-
-.header-logo-btn.movies-logo svg {
-  fill: #f5c518;
-  filter: drop-shadow(0 0 3px rgba(245, 197, 24, 0.4));
-}
-
-.header-logo-btn.shows-logo svg {
-  fill: #a855f7;
-  filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.4));
-}
-
-/* ==========================================================================
    Netflix / Prime Media Library View (Movies & Shows)
    ========================================================================== */
 .media-library-view {

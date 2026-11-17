@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from contextlib import nullcontext
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from fastapi import BackgroundTasks
 import pytest
@@ -356,6 +357,46 @@ def test_gone_soon_lists_subscribed_videos_oldest_first_in_batches(temp_db):
     second = client.get("/api/gone-soon?limit=2&offset=2", headers=headers).json()
     assert [item["video_id"] for item in second["items"]] == ["new"]
     assert second["has_more"] is False
+
+def test_gone_soon_can_include_watched_videos(temp_db):
+    _seed_dated_video("old", "alpha", "2023-01-01")
+    _seed_dated_video("new", "alpha", "2024-06-01")
+    headers = _create_user("Ann")
+    client.put("/api/channels/alpha/subscription", json={"subscribed": True}, headers=headers)
+    client.post("/api/videos/old/progress", json={"position": 100, "duration": 100}, headers=headers)
+
+    unplayed = client.get("/api/gone-soon", headers=headers).json()["items"]
+    assert [item["video_id"] for item in unplayed] == ["new"]
+
+    everything = client.get("/api/gone-soon?unplayed_only=false", headers=headers).json()["items"]
+    assert [item["video_id"] for item in everything] == ["old", "new"]
+
+def test_continue_watching_spans_all_channels_and_skips_finished_or_barely_started(temp_db):
+    _seed_dated_video("subscribed", "alpha", "2024-01-01")
+    _seed_dated_video("other", "beta", "2024-01-02")
+    _seed_dated_video("barely", "beta", "2024-01-03")
+    _seed_dated_video("finished", "beta", "2024-01-04")
+    headers = _create_user("Ann")
+    client.put("/api/channels/alpha/subscription", json={"subscribed": True}, headers=headers)
+    client.post("/api/videos/subscribed/progress", json={"position": 40, "duration": 100}, headers=headers)
+    client.post("/api/videos/other/progress", json={"position": 60, "duration": 100}, headers=headers)
+    client.post("/api/videos/barely/progress", json={"position": 3, "duration": 100}, headers=headers)
+    client.post("/api/videos/finished/progress", json={"position": 100, "duration": 100}, headers=headers)
+
+    items = client.get("/api/continue-watching", headers=headers).json()["items"]
+    assert sorted(item["video_id"] for item in items) == ["other", "subscribed"]
+
+def test_unwatched_recent_count_only_covers_subscribed_videos_from_last_day(temp_db):
+    today = datetime.now(timezone.utc).date()
+    _seed_dated_video("fresh", "alpha", today.isoformat())
+    _seed_dated_video("fresh_watched", "alpha", today.isoformat())
+    _seed_dated_video("fresh_other", "beta", today.isoformat())
+    _seed_dated_video("stale", "alpha", (today - timedelta(days=3)).isoformat())
+    headers = _create_user("Ann")
+    client.put("/api/channels/alpha/subscription", json={"subscribed": True}, headers=headers)
+    client.post("/api/videos/fresh_watched/progress", json={"position": 100, "duration": 100}, headers=headers)
+
+    assert client.get("/api/stats", headers=headers).json()["unwatched_recent_videos"] == 1
 
 def test_space_cleanup_deletes_oldest_videos_until_under_limit(temp_db, tmp_path, monkeypatch):
     import backend.cleanup_service as cleanup_service

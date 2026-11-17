@@ -160,7 +160,7 @@ struct MyTubeRootView: View {
             // 1. Subscriptions (Home Feed)
             SwiftUI.Tab(value: MyTubeTab.subscriptions) {
                 NavigationInjectionView(coordinator: subscriptionsCoordinator) {
-                    MyTubeFeedView()
+                    MyTubeFeedView(isActive: selectedTab == .subscriptions)
                 }
             } label: {
                 Label("Subscriptions", systemImage: "play.rectangle.fill")
@@ -169,7 +169,7 @@ struct MyTubeRootView: View {
             // 2. Channels
             SwiftUI.Tab(value: MyTubeTab.channels) {
                 NavigationInjectionView(coordinator: channelsCoordinator) {
-                    MyTubeChannelsView()
+                    MyTubeChannelsView(isActive: selectedTab == .channels)
                 }
             } label: {
                 Label("Channels", systemImage: "person.2.fill")
@@ -178,7 +178,7 @@ struct MyTubeRootView: View {
             // Gone soon (oldest subscribed videos, pending auto-deletion)
             SwiftUI.Tab(value: MyTubeTab.goneSoon) {
                 NavigationInjectionView(coordinator: goneSoonCoordinator) {
-                    MyTubeGoneSoonView()
+                    MyTubeGoneSoonView(isActive: selectedTab == .goneSoon)
                 }
             } label: {
                 Label("Gone soon", systemImage: "trash.fill")
@@ -187,7 +187,7 @@ struct MyTubeRootView: View {
             // 3. Movies
             SwiftUI.Tab(value: MyTubeTab.movies) {
                 NavigationInjectionView(coordinator: moviesCoordinator) {
-                    MyTubeMoviesView()
+                    MyTubeMoviesView(isActive: selectedTab == .movies)
                 }
             } label: {
                 Label("Movies", systemImage: "film.fill")
@@ -196,7 +196,7 @@ struct MyTubeRootView: View {
             // 4. Shows
             SwiftUI.Tab(value: MyTubeTab.shows) {
                 NavigationInjectionView(coordinator: showsCoordinator) {
-                    MyTubeShowsView()
+                    MyTubeShowsView(isActive: selectedTab == .shows)
                 }
             } label: {
                 Label("Shows", systemImage: "tv.fill")

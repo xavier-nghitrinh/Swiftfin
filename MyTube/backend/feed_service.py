@@ -68,7 +68,7 @@ class FeedService:
             return FeedService._paginated_videos(cursor, user_id, where_clauses, params, limit, offset)
 
     @staticmethod
-    def get_gone_soon(user_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    def get_gone_soon(user_id: str, limit: int = 50, offset: int = 0, unplayed_only: bool = True) -> Dict[str, Any]:
         """Subscribed available videos, oldest first: the next candidates for automatic space cleanup.
 
         Ordered by upload_date (the same key the space cleanup uses), then ingest time as a tiebreaker.
@@ -80,14 +80,37 @@ class FeedService:
                 "v.file_status = 'available'",
                 "v.channel_id IN (SELECT channel_id FROM user_subscriptions WHERE user_id = ?)",
             ]
+            params: List[Any] = [user_id]
+            if unplayed_only:
+                where_clauses.append("COALESCE(p.watched, 0) = 0")
             return FeedService._paginated_videos(
                 cursor,
                 user_id,
                 where_clauses,
-                [user_id],
+                params,
                 limit,
                 offset,
                 order_sql="(v.upload_date IS NULL), v.upload_date ASC, v.created_at ASC, v.video_id ASC",
+            )
+
+    @staticmethod
+    def get_continue_watching(user_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """Partly watched available videos from any channel, most recently played first."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            where_clauses = [
+                "v.file_status = 'available'",
+                "COALESCE(p.watched, 0) = 0",
+                "COALESCE(p.playback_position, 0) > 5",
+            ]
+            return FeedService._paginated_videos(
+                cursor,
+                user_id,
+                where_clauses,
+                [],
+                limit,
+                offset,
+                order_sql="p.updated_at DESC, v.video_id DESC",
             )
 
     @staticmethod
@@ -154,7 +177,7 @@ class FeedService:
     def get_channel_videos(
         channel_id: str,
         user_id: str,
-        filter_type: str = "all", # 'all', 'unwatched', 'watched'
+        filter_type: str = "all", # 'all' or 'unwatched'
         limit: int = 50,
         offset: int = 0
     ) -> Dict[str, Any]:
@@ -166,8 +189,6 @@ class FeedService:
             
             if filter_type == "unwatched":
                 where_clauses.append("COALESCE(p.watched, 0) = 0")
-            elif filter_type == "watched":
-                where_clauses.append("COALESCE(p.watched, 0) = 1")
 
             return FeedService._paginated_videos(cursor, user_id, where_clauses, params, limit, offset)
 
@@ -260,6 +281,16 @@ class FeedService:
                 WHERE COALESCE(p.watched, 0) = 0 AND v.file_status = 'available'
             """, (user_id,))
             unwatched_videos = cursor.fetchone()[0]
+
+            # upload_date is date-only, so "last 24h" means today or yesterday (UTC, as SQLite's date('now')).
+            cursor.execute("""
+                SELECT COUNT(*) FROM videos v
+                LEFT JOIN user_progress p ON p.media_id = v.video_id AND p.user_id = ? AND p.media_type = 'youtube'
+                WHERE COALESCE(p.watched, 0) = 0 AND v.file_status = 'available'
+                  AND v.upload_date >= date('now', '-1 day')
+                  AND v.channel_id IN (SELECT channel_id FROM user_subscriptions WHERE user_id = ?)
+            """, (user_id, user_id))
+            unwatched_recent_videos = cursor.fetchone()[0]
             
             cursor.execute("""
                 SELECT COUNT(*) FROM videos v
@@ -281,6 +312,7 @@ class FeedService:
                 "total_channels": total_channels,
                 "total_videos": total_videos,
                 "unwatched_videos": unwatched_videos,
+                "unwatched_recent_videos": unwatched_recent_videos,
                 "watched_videos": watched_videos,
                 "total_movies": total_movies,
                 "total_shows": total_shows,

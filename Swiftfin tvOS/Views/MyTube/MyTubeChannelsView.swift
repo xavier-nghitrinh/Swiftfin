@@ -16,6 +16,12 @@ struct MyTubeChannelsView: View {
     @Router
     private var router
 
+    let isActive: Bool
+
+    init(isActive: Bool = false) {
+        self.isActive = isActive
+    }
+
     @State
     private var channels: [MyTubeChannel] = []
 
@@ -186,6 +192,12 @@ struct MyTubeChannelsView: View {
         .task {
             await loadChannels()
         }
+        .onChange(of: isActive) { _, active in
+            guard active else { return }
+            Task { @MainActor in
+                await loadChannels()
+            }
+        }
     }
 }
 
@@ -250,8 +262,8 @@ struct MyTubeChannelDetailView: View {
 
     let channel: MyTubeChannel
 
-    @State
-    private var selectedFilter: String = "all" // all, unwatched, watched
+    @AppStorage("myTubeUnwatchedOnly")
+    private var unwatchedOnly: Bool = true
 
     @State
     private var videos: [MyTubeVideo] = []
@@ -268,7 +280,7 @@ struct MyTubeChannelDetailView: View {
         do {
             let res = try await MyTubeClient.shared.getChannelVideos(
                 channelId: channel.channelId,
-                filter: selectedFilter,
+                filter: unwatchedOnly ? "unwatched" : "all",
                 limit: 100,
                 offset: 0
             )
@@ -303,9 +315,8 @@ struct MyTubeChannelDetailView: View {
 
                     // Filters
                     HStack(spacing: 12) {
-                        filterButton(title: "All", filter: "all")
-                        filterButton(title: "Unwatched", filter: "unwatched")
-                        filterButton(title: "Watched", filter: "watched")
+                        filterButton(title: "Unwatched", unwatched: true)
+                        filterButton(title: "All Videos", unwatched: false)
                     }
                 }
                 .padding(.horizontal, 50)
@@ -355,18 +366,18 @@ struct MyTubeChannelDetailView: View {
     }
 
     @ViewBuilder
-    private func filterButton(title: String, filter: String) -> some View {
+    private func filterButton(title: String, unwatched: Bool) -> some View {
         Button {
-            selectedFilter = filter
+            unwatchedOnly = unwatched
             Task { await loadVideos() }
         } label: {
             Text(title)
                 .font(.callout)
-                .fontWeight(selectedFilter == filter ? .bold : .regular)
+                .fontWeight(unwatchedOnly == unwatched ? .bold : .regular)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
         }
         .buttonStyle(.borderedProminent)
-        .tint(selectedFilter == filter ? Color.red : Color(white: 0.25))
+        .tint(unwatchedOnly == unwatched ? Color.red : Color(white: 0.25))
     }
 }
