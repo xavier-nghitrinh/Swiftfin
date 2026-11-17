@@ -123,10 +123,10 @@ struct MyTubeVideo: Identifiable, Hashable, Codable, Sendable {
         }
     }
 
-    /// Title without the scraper's "sYYYY.mmddxx - " or "YYYY-MM-DD - " prefix.
+    /// Title without the scraper's "sYYYY.eMMDDxx - " or "YYYY-MM-DD - " prefix.
     var displayTitle: String {
         let stripped = title.replacingOccurrences(
-            of: #"^(?:s\d{4}\.\d{4}\S*|\d{4}-\d{2}-\d{2})\s*-\s*"#,
+            of: #"^(?:s\d{4}\.e?\d+\S*|\d{4}-\d{2}-\d{2})\s*-\s*"#,
             with: "",
             options: [.regularExpression, .caseInsensitive]
         )

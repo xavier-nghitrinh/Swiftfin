@@ -6,10 +6,10 @@ const API_BASE = '/api';
 const USER_ID_KEY = 'mytube.userId';
 const USER_NAME_KEY = 'mytube.userName';
 
-// Strips the "sYYYY.mmddxx - " or "YYYY-MM-DD - " prefix added by the scraper.
+// Strips the "sYYYY.eMMDDxx - " or "YYYY-MM-DD - " prefix added by the scraper.
 function cleanVideoTitle(title) {
   if (!title) return '';
-  const cleaned = title.replace(/^(?:s\d{4}\.\d{4}\S*|\d{4}-\d{2}-\d{2})\s*-\s*/i, '').trim();
+  const cleaned = title.replace(/^(?:s\d{4}\.e?\d+\S*|\d{4}-\d{2}-\d{2})\s*-\s*/i, '').trim();
   return cleaned || title;
 }
 
