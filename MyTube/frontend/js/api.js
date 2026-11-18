@@ -158,6 +158,17 @@ const api = {
     return await res.json();
   },
 
+  async synthesizeSubtitle(videoId, subtitleIndex) {
+    const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/synthesize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subtitle_index: subtitleIndex }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || `AI synthesis failed: ${res.statusText}`);
+    return body;
+  },
+
   async reportProgress(videoId, position, duration, syncToJellyfin = false) {
     try {
       const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/progress`, {

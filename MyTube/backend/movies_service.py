@@ -71,15 +71,13 @@ class MoviesService:
                     "movies": movies_in_g[:15]
                 })
 
-            # 5. Featured / Hero movie banner
-            # Pick a movie with backdrop and highest community rating or recently added
+            # 5. Featured / Hero movie banner: a random pick on every visit
             featured = None
             candidates = [m for m in all_movies if m.get("backdrop_url")]
             if candidates:
-                candidates.sort(key=lambda x: (x.get("community_rating") or 0, x.get("release_year") or 0), reverse=True)
-                featured = candidates[0]
+                featured = random.choice(candidates)
             elif all_movies:
-                featured = all_movies[0]
+                featured = random.choice(all_movies)
 
             return {
                 "featured": featured,

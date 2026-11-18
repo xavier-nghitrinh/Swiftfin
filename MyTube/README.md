@@ -30,6 +30,7 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
    - **Audio-Only Playback:** Select **Audio only** in the quality menu to stream the selected audio track without video.
    - **Multi-Audio Selector:** Supports multiple audio tracks (e.g. English, Vietnamese).
    - **Subtitle Selector:** WebVTT captions directly from Jellyfin with `Off` toggle.
+   - **AI Subtitle Synthesis:** While a subtitle track is selected, the sparkle button sends the complete track to Google Gemini (`GEMINI_MODEL`, default `gemini-3.5-flash-lite`) and shows a compact Markdown note in the subtitle's language. Nothing is saved. Set the `GEMINI_API_KEY` environment variable on the server; it is never stored in the repository. Rate limits and server errors are retried up to 3 times with exponential backoff.
    - **Hold for 1.8x Speed:** Press and hold screen or mouse anywhere on the video for > 250ms to speed up to 1.8x with animated on-screen badge; restores previous speed on release.
    - **Speed Selector:** 0.5x to 2.0x.
    - **Fullscreen Support:** Desktop Fullscreen API + iOS Safari WebKit fullscreen.
@@ -69,7 +70,7 @@ The production MyTube instance is on `192.168.1.108:11226`:
 - systemd service: `mytube.service` (runs as `devmon`, listens on port `8000`)
 - Local verification URL: `http://192.168.1.108:8000`
 
-Never put SSH passwords, private keys, Jellyfin API keys, or other credentials in this README or in source control. Use the existing SSH key; do not enable password-based automation. The server's `xavie` account cannot write into `/home/devmon/MyTube`, and `sudo` may prompt for the account password. Do not assume passwordless sudo is configured: inspect access at the start of each deployment. A temporary deployment helper from a previous session may have been removed.
+Never put SSH passwords, private keys, Jellyfin API keys, or other credentials in this README or in source control. The server's `xavie` account cannot write into `/home/devmon/MyTube`, and `sudo` may prompt for the account password. Do not assume passwordless sudo is configured: inspect access at the start of each deployment. A temporary deployment helper from a previous session may have been removed.
 
 For a future code change, the developer/assistant should:
 
@@ -79,7 +80,7 @@ For a future code change, the developer/assistant should:
 4. Run the authorized helper, check `systemctl is-active mytube`, and verify the site/API plus the feature that changed. Check logs if the service fails to restart. Report whether deployment and verification succeeded.
 5. Remove the staged copies and the temporary sudoers rule and helper, then verify the service is still active and the temporary access is gone. If elevated cleanup requires the owner, give them the exact cleanup commands instead of leaving temporary access in place.
 
-The helper is deliberately created for each deployment from the actual changed-file list; do not treat a helper left by an earlier deployment as trusted or reusable without inspecting it. If SSH key access is unavailable, stop and ask the owner to restore access rather than requesting or recording a password.
+The helper is deliberately created for each deployment from the actual changed-file list; do not treat a helper left by an earlier deployment as trusted or reusable without inspecting it.
 
 ### 1. Launch MyTube Server
 Double-click `start_mytube.bat` or run:

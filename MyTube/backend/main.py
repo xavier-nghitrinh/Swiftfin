@@ -18,6 +18,7 @@ from backend.movies_service import MoviesService
 from backend.shows_service import ShowsService
 from backend.user_service import UserService
 from backend.jellyfin_client import jellyfin
+from backend.synthesis_service import SynthesisError, synthesize_subtitle
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("mytube.api")
@@ -47,6 +48,9 @@ class UserPayload(BaseModel):
 
 class SubscriptionPayload(BaseModel):
     subscribed: bool
+
+class SynthesisPayload(BaseModel):
+    subtitle_index: int
 
 def get_current_user(x_mytube_user: Optional[str] = Header(None, alias="X-MyTube-User")) -> Dict[str, Any]:
     """Resolve the MyTube user identified by the X-MyTube-User header."""
@@ -238,6 +242,14 @@ def get_video_subtitle_vtt(video_id: str, sub_index: int):
     if vtt is None:
         raise HTTPException(status_code=404, detail="Subtitle not found")
     return Response(content=vtt, media_type="text/vtt; charset=utf-8")
+
+@app.post("/api/videos/{video_id}/synthesize", dependencies=[Depends(get_current_user)])
+def synthesize_video_subtitle(video_id: str, payload: SynthesisPayload):
+    """AI Markdown synthesis of the complete selected subtitle track. Nothing is stored."""
+    try:
+        return synthesize_subtitle(video_id, payload.subtitle_index)
+    except SynthesisError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 @app.post("/api/videos/{video_id}/progress")
 def report_playback_progress(

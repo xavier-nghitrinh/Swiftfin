@@ -1086,6 +1086,16 @@ const Player = {
       this.subtitleOverlay.innerHTML = '';
     }
     this.removeNativeTracks();
+    this.notifySubtitleChanged();
+  },
+
+  // The watch page listens for this to show or hide its AI synthesis button
+  notifySubtitleChanged() {
+    window.dispatchEvent(new CustomEvent('mytube:subtitle-changed', {
+      detail: this.currentSubMeta && this.currentVideo
+        ? { videoId: this.currentVideo.video_id, index: this.currentSubMeta.index, label: this.currentSubMeta.label }
+        : null,
+    }));
   },
 
   async switchSubtitle(index, url = null, lang = 'en', label = 'Subtitle') {
@@ -1105,6 +1115,7 @@ const Player = {
     if (index < 0 || !url) return;
 
     this.currentSubMeta = { index, url, lang, label };
+    this.notifySubtitleChanged();
 
     try {
       const res = await fetch(url);

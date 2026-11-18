@@ -105,14 +105,13 @@ class ShowsService:
                     "shows": shows_in_g[:15]
                 })
 
-            # 5. Featured / Hero Show Banner
+            # 5. Featured / Hero Show Banner: a random pick on every visit
             featured = None
             candidates = [s for s in all_shows if s.get("backdrop_url")]
             if candidates:
-                candidates.sort(key=lambda x: (x.get("community_rating") or 0, x.get("start_year") or 0), reverse=True)
-                featured = candidates[0]
+                featured = random.choice(candidates)
             elif all_shows:
-                featured = all_shows[0]
+                featured = random.choice(all_shows)
 
             return {
                 "featured": featured,

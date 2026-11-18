@@ -82,6 +82,15 @@ const App = {
 
     window.addEventListener('hashchange', () => this.handleRoute());
     window.addEventListener('mytube:user-invalid', () => this.returnToUserSelection());
+    window.addEventListener('mytube:subtitle-changed', (e) => this.onWatchSubtitleChanged(e.detail));
+    document.getElementById('watch-ai-btn').addEventListener('click', () => this.generateWatchAi());
+    // Links in the AI note open in a new tab so the app stays open
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName === 'A') {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
 
     if (api.getUserId()) {
       this.enterApp();
@@ -618,6 +627,7 @@ const App = {
   // =========================================================
   async renderWatchView(videoId) {
     this.currentWatchVideoId = videoId;
+    this.onWatchSubtitleChanged(null);
     document.getElementById('watch-video-title').textContent = 'Loading video...';
     document.getElementById('watch-description').textContent = '';
 
@@ -665,13 +675,7 @@ const App = {
 
     this.updateWatchWatchedButton(Boolean(data.watched));
 
-    const descEl = document.getElementById('watch-description');
-    if (data.description && data.description.trim()) {
-      descEl.style.display = 'block';
-      descEl.textContent = data.description;
-    } else {
-      descEl.style.display = 'none';
-    }
+    this.renderWatchDescription(data.description);
 
     if (this.upNextSource === 'channel' && data.media_type !== 'movie' && data.media_type !== 'episode') {
       this.loadUpNextVideos();
@@ -685,6 +689,114 @@ const App = {
       this.updateWatchWatchedButton(true);
       this.updateStats();
     });
+  },
+
+  // Shows a short preview ending in "…" with a "more" toggle; the full text is never clipped in a scroll box
+  renderWatchDescription(description) {
+    const descEl = document.getElementById('watch-description');
+    const text = (description || '').trim();
+    descEl.innerHTML = '';
+    if (!text) {
+      descEl.style.display = 'none';
+      return;
+    }
+    descEl.style.display = 'block';
+
+    const previewLength = 150;
+    const isLong = text.length > previewLength;
+    const preview = isLong ? `${text.slice(0, previewLength).replace(/\s+\S*$/, '')}…` : text;
+
+    const bodyEl = document.createElement('span');
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'watch-description-toggle';
+    let expanded = false;
+    const render = () => {
+      bodyEl.textContent = expanded ? text : preview;
+      toggle.textContent = expanded ? ' less' : ' more';
+    };
+    toggle.addEventListener('click', () => {
+      expanded = !expanded;
+      render();
+    });
+
+    descEl.append(bodyEl, toggle);
+    if (isLong) {
+      render();
+    } else {
+      bodyEl.textContent = text;
+      toggle.remove();
+    }
+  },
+
+  // The AI button is only offered while a subtitle track is selected; its result belongs to that track
+  onWatchSubtitleChanged(subtitle) {
+    this.watchAiSubtitle = subtitle;
+    this.watchAiRequestId = (this.watchAiRequestId || 0) + 1;
+    document.getElementById('watch-ai-row').style.display = subtitle ? 'flex' : 'none';
+    const resultEl = document.getElementById('watch-ai-result');
+    resultEl.style.display = 'none';
+    resultEl.innerHTML = '';
+  },
+
+  async generateWatchAi() {
+    const subtitle = this.watchAiSubtitle;
+    if (!subtitle) return;
+    const requestId = (this.watchAiRequestId = (this.watchAiRequestId || 0) + 1);
+    this.showWatchAiStatus(`Synthesizing the full ${subtitle.label} subtitle track…`);
+
+    try {
+      const result = await api.synthesizeSubtitle(subtitle.videoId, subtitle.index);
+      if (requestId !== this.watchAiRequestId) return;
+      this.renderWatchAiResult(result.markdown, subtitle.label);
+    } catch (e) {
+      if (requestId !== this.watchAiRequestId) return;
+      this.showWatchAiStatus(e.message || 'Synthesis failed', true);
+    }
+  },
+
+  showWatchAiStatus(message, isError = false) {
+    const resultEl = document.getElementById('watch-ai-result');
+    resultEl.innerHTML = '';
+    resultEl.style.display = 'block';
+    const status = document.createElement('div');
+    status.className = `watch-ai-status${isError ? ' watch-ai-error' : ''}`;
+    status.textContent = message;
+    resultEl.appendChild(status);
+    if (isError) {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'watch-ai-retry';
+      retry.textContent = 'Try again';
+      retry.addEventListener('click', () => this.generateWatchAi());
+      resultEl.appendChild(retry);
+    }
+  },
+
+  renderWatchAiResult(markdown, label) {
+    const resultEl = document.getElementById('watch-ai-result');
+    resultEl.innerHTML = '';
+    resultEl.style.display = 'block';
+
+    const header = document.createElement('div');
+    header.className = 'watch-ai-result-header';
+    const title = document.createElement('span');
+    title.textContent = label ? `AI Synthesis · ${label}` : 'AI Synthesis';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'watch-ai-close';
+    close.textContent = 'Hide';
+    close.addEventListener('click', () => this.onWatchSubtitleChanged(this.watchAiSubtitle));
+    header.append(title, close);
+
+    const body = document.createElement('div');
+    body.innerHTML = this.renderMarkdown(markdown);
+    resultEl.append(header, body);
+  },
+
+  // marked renders the AI note; DOMPurify sanitizes the output because the text comes from a model
+  renderMarkdown(markdown) {
+    return DOMPurify.sanitize(marked.parse(markdown || '', { gfm: true, breaks: true }));
   },
 
   updateWatchWatchedButton(isWatched) {

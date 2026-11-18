@@ -1,4 +1,5 @@
 import asyncio
+import random
 import sys
 from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
@@ -14,9 +15,12 @@ import backend.main as main
 from backend.database import get_db, init_db
 from backend.main import app, report_playback_progress, ProgressPayload
 from backend.playback_service import PlaybackService
+from backend.movies_service import MoviesService
 from backend.jellyfin_client import JellyfinClient
 from backend.user_service import UserService
 import backend.playback_service as playback_service
+import backend.synthesis_service as synthesis_service
+from backend.synthesis_service import vtt_to_transcript
 
 client = TestClient(app)
 
@@ -553,6 +557,78 @@ def test_api():
         print(f"  {asset} -> OK ({len(r.content)} bytes)")
 
     print("\n=== ALL BACKEND & FRONTEND TESTS PASSED SUCCESSFULLY! ===")
+
+def test_vtt_to_transcript_drops_timings_tags_and_rolling_duplicates():
+    vtt = (
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:02.000 align:start\n"
+        "Hello <c>world</c>\n\n"
+        "00:00:02.000 --> 00:00:04.000\n"
+        "Hello world\nSecond &amp; last line\n\n"
+        "00:00:04.000 --> 00:00:06.000\n"
+        "Second &amp; last line\n"
+    )
+    assert vtt_to_transcript(vtt) == "Hello world\nSecond & last line"
+
+
+class _FakeResponse:
+    def __init__(self, status_code, body=None):
+        self.status_code = status_code
+        self._body = body or {}
+
+    def json(self):
+        return self._body
+
+
+_GEMINI_OK = {"candidates": [{"content": {"parts": [{"text": "## Notes\n- point"}]}}]}
+
+
+def test_gemini_call_retries_with_exponential_backoff_then_succeeds(monkeypatch):
+    responses = [_FakeResponse(429), _FakeResponse(503), _FakeResponse(200, _GEMINI_OK)]
+    sleeps = []
+    monkeypatch.setattr(synthesis_service, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(synthesis_service.requests, "post", lambda *a, **k: responses.pop(0))
+    monkeypatch.setattr(synthesis_service.time, "sleep", sleeps.append)
+
+    assert synthesis_service.call_gemini("transcript") == "## Notes\n- point"
+    assert sleeps == [1, 2]
+
+
+def test_gemini_call_gives_up_after_three_retries_and_does_not_retry_client_errors(monkeypatch):
+    calls = []
+    sleeps = []
+    monkeypatch.setattr(synthesis_service, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(synthesis_service.requests, "post", lambda *a, **k: calls.append(1) or _FakeResponse(429))
+    monkeypatch.setattr(synthesis_service.time, "sleep", sleeps.append)
+
+    with pytest.raises(synthesis_service.SynthesisError) as exc:
+        synthesis_service.call_gemini("transcript")
+    assert exc.value.status_code == 503
+    assert len(calls) == 4 and sleeps == [1, 2, 4]
+
+    calls.clear()
+    monkeypatch.setattr(synthesis_service.requests, "post", lambda *a, **k: calls.append(1) or _FakeResponse(400))
+    with pytest.raises(synthesis_service.SynthesisError):
+        synthesis_service.call_gemini("transcript")
+    assert len(calls) == 1
+
+
+def test_featured_movie_changes_between_home_loads(temp_db):
+    with get_db() as conn:
+        for i in range(6):
+            conn.execute(
+                """INSERT INTO movies (movie_id, title, jellyfin_item_id, backdrop_url, file_status, created_at, updated_at)
+                   VALUES (?, ?, ?, 'backdrop.jpg', 'available', '2024-01-01T00:00:00+00:00', '2024-01-01T00:00:00+00:00')""",
+                (f"movie-{i}", f"Movie {i}", f"jf-{i}"),
+            )
+        conn.commit()
+
+    featured_ids = set()
+    for seed in range(20):
+        random.seed(seed)
+        featured_ids.add(MoviesService.get_movies_home("user-1")["featured"]["movie_id"])
+    assert len(featured_ids) > 1
+
 
 if __name__ == "__main__":
     test_api()

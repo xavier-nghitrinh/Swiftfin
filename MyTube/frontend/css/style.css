@@ -23,6 +23,25 @@ body {
   color: var(--text-main);
   font-family: var(--font-family);
   overflow-x: hidden;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Text is selectable across the app except inside clickable links, buttons and cards */
+a,
+button,
+[role="button"],
+label,
+.logo-area,
+.nav-item,
+.video-card,
+.compact-video-card,
+.media-card,
+.channel-card,
+.episode-card,
+.menu-item,
+.watch-channel-info {
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -784,6 +803,112 @@ video {
 }
 
 /* Custom Player Controls Overlay */
+.watch-ai-row {
+  margin-top: 12px;
+  display: flex;
+}
+
+.watch-ai-result {
+  margin-top: 12px;
+  background: var(--bg-card);
+  padding: 14px 18px 18px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #ddd;
+  user-select: text;
+}
+
+.watch-ai-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.watch-ai-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.watch-ai-result h3,
+.watch-ai-result h4,
+.watch-ai-result h5,
+.watch-ai-result h6 {
+  margin: 14px 0 6px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.watch-ai-result h3 { font-size: 1.05rem; }
+.watch-ai-result h4 { font-size: 0.98rem; }
+.watch-ai-result h5,
+.watch-ai-result h6 { font-size: 0.92rem; }
+
+.watch-ai-result p {
+  margin: 6px 0;
+}
+
+.watch-ai-result ul,
+.watch-ai-result ol {
+  padding-left: 1.3em;
+  margin: 6px 0;
+}
+
+.watch-ai-result li {
+  margin: 2px 0;
+}
+
+.watch-ai-result hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin: 12px 0;
+}
+
+.watch-ai-result code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.watch-ai-result table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 0.85rem;
+}
+
+.watch-ai-result th,
+.watch-ai-result td {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.watch-ai-status {
+  color: #bbb;
+}
+
+.watch-ai-error {
+  color: #ff8a80;
+}
+
+.watch-ai-retry {
+  margin-top: 10px;
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
 .player-overlay {
   position: absolute;
   inset: 0;
@@ -1014,9 +1139,17 @@ video {
   color: #ddd;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 180px;
-  overflow-y: auto;
   user-select: text;
+}
+
+.watch-description-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #fff;
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* Up Next Sidebar */

@@ -42,6 +42,9 @@ JELLYFIN_LIBRARY_ID = os.environ.get("JELLYFIN_LIBRARY_ID", "34f331a89ce405e2b87
 JELLYFIN_MOVIES_LIBRARY_ID = os.environ.get("JELLYFIN_MOVIES_LIBRARY_ID", "f137a2dd21bbc1b99aa5c0f6bf02a805")
 JELLYFIN_SHOWS_LIBRARY_ID = os.environ.get("JELLYFIN_SHOWS_LIBRARY_ID", "a656b907eb3a73532e40e44b968d0225")
 
+# Google AI Studio (Gemini) for AI subtitle synthesis. The key is read from the environment only; never commit it.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 
 # Lifecycle & Business Rules

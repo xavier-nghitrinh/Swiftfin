@@ -7,6 +7,8 @@ const STATIC_ASSETS = [
   '/js/api.js',
   '/js/player.js',
   '/js/app.js',
+  '/js/marked.umd.js',
+  '/js/purify.min.js',
   '/manifest.json'
 ];
 
