@@ -10,6 +10,7 @@ const App = {
   routeHistory: [],
   currentChannelId: null,
   scraperChannels: [],
+  unconfiguredChannels: [], // MyTube channels with no channels.json entry; shown so their config can be added
   mytubeChannelsByName: new Map(), // MyTube channels keyed by lowercase name, to match channels.json entries
   scraperEditingName: null, // Original name of the channel being edited; null when adding
   currentWatchData: null,
@@ -1035,10 +1036,18 @@ const App = {
       this.mytubeChannelsByName = new Map(
         mytubeChannels.map((ch) => [(ch.name || '').trim().toLowerCase(), ch])
       );
+      const configNames = new Set(scraperChannels.map((ch) => (ch.name || '').trim().toLowerCase()));
+      this.unconfiguredChannels = [...this.mytubeChannelsByName.entries()]
+        .filter(([key]) => !configNames.has(key))
+        .map(([, ch]) => ch);
       const count = scraperChannels.length;
-      this.scraperStatus.textContent = `${count} ${count === 1 ? 'channel' : 'channels'} in the scraper config. Changes apply on the scraper's next run.`;
+      const extra = this.unconfiguredChannels.length;
+      let status = `${count} ${count === 1 ? 'channel' : 'channels'} in the scraper config.`;
+      if (extra) status += ` ${extra} downloaded ${extra === 1 ? 'channel is' : 'channels are'} not in the config yet.`;
+      this.scraperStatus.textContent = `${status} Changes apply on the scraper's next run.`;
     } catch (err) {
       this.scraperChannels = [];
+      this.unconfiguredChannels = [];
       this.scraperStatus.textContent = err.message || 'Failed to load channels';
     } finally {
       this.showLoading(false);
@@ -1048,21 +1057,29 @@ const App = {
 
   renderChannelRows() {
     const filter = this.channelSubscriptionFilter;
-    const rows = this.scraperChannels
-      .map((channel) => ({
-        channel,
-        match: this.mytubeChannelsByName.get((channel.name || '').trim().toLowerCase()) || null,
-      }))
-      .filter(({ match }) => {
-        const subscribed = Boolean(match && match.subscribed);
-        if (filter === 'subscribed') return subscribed;
-        if (filter === 'unsubscribed') return !subscribed;
-        return true;
-      });
+    const configRows = this.scraperChannels.map((channel) => ({
+      channel,
+      match: this.mytubeChannelsByName.get((channel.name || '').trim().toLowerCase()) || null,
+    }));
+    const downloadedRows = this.unconfiguredChannels.map((match) => ({
+      channel: {
+        name: match.name,
+        url: /^UC[\w-]{22}$/.test(match.channel_id) ? `https://www.youtube.com/channel/${match.channel_id}` : '',
+        unconfigured: true,
+      },
+      match,
+    }));
+    const allRows = [...configRows, ...downloadedRows];
+    const rows = allRows.filter(({ match }) => {
+      const subscribed = Boolean(match && match.subscribed);
+      if (filter === 'subscribed') return subscribed;
+      if (filter === 'unsubscribed') return !subscribed;
+      return true;
+    });
 
     this.scraperList.innerHTML = '';
     if (rows.length === 0) {
-      if (this.scraperChannels.length === 0) {
+      if (allRows.length === 0) {
         this.showEmpty(true, 'No channels yet', 'Add a channel to have the scraper download it.');
       } else {
         const emptyMessages = {
@@ -1137,7 +1154,7 @@ const App = {
     editBtn.innerHTML = this.icons.pencil;
     editBtn.title = 'Edit scraper settings';
     editBtn.setAttribute('aria-label', 'Edit scraper settings');
-    editBtn.addEventListener('click', () => this.openScraperForm(channel));
+    editBtn.addEventListener('click', () => this.openScraperForm(channel, { isNew: Boolean(channel.unconfigured) }));
 
     actions.append(bellBtn, editBtn);
     row.append(identity, actions);
@@ -1152,6 +1169,7 @@ const App = {
     } else {
       parts.push('Not downloaded yet');
     }
+    if (channel.unconfigured) parts.push('Not in scraper config');
     if (channel.enabled === false) parts.push('Disabled');
     return parts.join(' • ');
   },
@@ -1172,7 +1190,7 @@ const App = {
   // =========================================================
   // Scraper Channels Panel (Channels page): manages youtube_scrapper channels.json
   // =========================================================
-  openScraperForm(channel = null) {
+  openScraperForm(channel = null, { isNew = false } = {}) {
     const defaults = {
       mode: 'video',
       resolution: 1080,
@@ -1197,9 +1215,10 @@ const App = {
         field.value = String(value);
       }
     }
-    this.scraperEditingName = channel ? channel.name : null;
-    this.scraperSaveBtn.textContent = channel ? 'Save channel' : 'Add channel';
-    this.scraperDeleteBtn.style.display = channel ? '' : 'none';
+    const editing = Boolean(channel) && !isNew;
+    this.scraperEditingName = editing ? channel.name : null;
+    this.scraperSaveBtn.textContent = editing ? 'Save channel' : 'Add channel';
+    this.scraperDeleteBtn.style.display = editing ? '' : 'none';
     this.scraperFormError.textContent = '';
     this.scraperForm.style.display = '';
     this.scraperForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
