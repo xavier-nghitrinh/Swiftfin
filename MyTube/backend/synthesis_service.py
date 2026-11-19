@@ -17,7 +17,7 @@ REQUEST_TIMEOUT_SECONDS = 120
 MAX_RETRIES = 3
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
-SYSTEM_PROMPT = """You synthesize a complete video subtitle transcript into a concise, high-value Markdown note, in the transcript original language.
+SYSTEM_PROMPT = """You synthesize a complete video subtitle transcript into a concise, high-value Markdown note, in Vietnamese.
 
 Rules:
 - Distill only the most important information: core takeaways, key learnings, concepts worth memorizing, standout facts, and main conclusions. Omit filler, minor tangents, and redundant examples to keep the note brief.
