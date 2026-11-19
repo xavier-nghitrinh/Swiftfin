@@ -13,6 +13,11 @@ REMOTE_MEDIA_DIR = os.environ.get("MYTUBE_REMOTE_MEDIA_DIR", "/media/devmon/EXTE
 # the oldest available videos are deleted (via Jellyfin) until it fits again.
 MAX_MEDIA_GB = float(os.environ.get("MYTUBE_MAX_MEDIA_GB", "200"))
 
+# The youtube_scrapper channels.json that the scraper re-reads on every run.
+SCRAPER_CHANNELS_PATH = Path(
+    os.environ.get("MYTUBE_SCRAPER_CHANNELS_PATH", "/home/devmon/youtube_scrapper/channels.json")
+)
+
 def resolve_db_path() -> str:
     """
     Resolve SQLite DB location:

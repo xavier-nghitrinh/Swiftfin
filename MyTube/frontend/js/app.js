@@ -9,7 +9,9 @@ const App = {
   previousRouteHash: '#home',
   routeHistory: [],
   currentChannelId: null,
-  currentWatchVideoId: null,
+  scraperChannels: [],
+  mytubeChannelsByName: new Map(), // MyTube channels keyed by lowercase name, to match channels.json entries
+  scraperEditingName: null, // Original name of the channel being edited; null when adding
   currentWatchData: null,
   upNextSource: 'feed', // 'feed' or 'channel'
   channelSubscriptionFilter: 'all', // 'all', 'subscribed', 'unsubscribed'
@@ -39,9 +41,16 @@ const App = {
   videoGrid: null,
   continueWatchingShelf: null,
   continueWatchingTrack: null,
-  channelList: null,
   viewTitle: null,
   channelHeaderAvatar: null,
+  scraperPanel: null,
+  scraperAddBtn: null,
+  scraperForm: null,
+  scraperSaveBtn: null,
+  scraperStatus: null,
+  scraperFormError: null,
+  scraperList: null,
+  scraperDeleteBtn: null,
   filterChips: null,
   loadingSpinner: null,
   emptyState: null,
@@ -49,6 +58,12 @@ const App = {
   searchInput: null,
   popoverMenu: null,
   toastEl: null,
+
+  icons: {
+    bell: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" fill="currentColor"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+    bellOff: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+    pencil: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>',
+  },
 
   init() {
     if ('scrollRestoration' in history) {
@@ -65,9 +80,20 @@ const App = {
     this.videoGrid = document.getElementById('video-grid');
     this.continueWatchingShelf = document.getElementById('feed-continue-watching');
     this.continueWatchingTrack = document.getElementById('feed-continue-watching-track');
-    this.channelList = document.getElementById('channel-list');
     this.viewTitle = document.getElementById('view-title');
     this.channelHeaderAvatar = document.getElementById('channel-header-avatar');
+    this.scraperPanel = document.getElementById('scraper-panel');
+    this.scraperAddBtn = document.getElementById('scraper-add-btn');
+    this.scraperForm = document.getElementById('scraper-form');
+    this.scraperSaveBtn = document.getElementById('scraper-save-btn');
+    this.scraperStatus = document.getElementById('scraper-status');
+    this.scraperFormError = document.getElementById('scraper-form-error');
+    this.scraperList = document.getElementById('scraper-list');
+    this.scraperDeleteBtn = document.getElementById('scraper-delete-btn');
+    this.scraperAddBtn.addEventListener('click', () => this.openScraperForm());
+    this.scraperDeleteBtn.addEventListener('click', () => this.removeScraperChannel(this.scraperEditingName));
+    document.getElementById('scraper-cancel-btn').addEventListener('click', () => this.closeScraperForm());
+    this.scraperForm.addEventListener('submit', (event) => this.saveScraperChannel(event));
     this.filterChips = document.getElementById('filter-chips');
     this.loadingSpinner = document.getElementById('loading-spinner');
     this.emptyState = document.getElementById('empty-state');
@@ -588,6 +614,7 @@ const App = {
     hideAllViews();
     this.browseView.style.display = 'block';
     this.channelHeaderAvatar.style.display = 'none';
+    this.scraperPanel.style.display = 'none';
     window.scrollTo(0, 0);
 
     this.feedOffset = 0;
@@ -887,7 +914,6 @@ const App = {
     if (!append) {
       this.viewTitle.textContent = 'Subscription Feed';
       this.videoGrid.style.display = 'grid';
-      this.channelList.style.display = 'none';
       this.videoGrid.innerHTML = '';
       this.renderContinueWatchingShelf();
       this.renderUnwatchedToggle();
@@ -991,31 +1017,67 @@ const App = {
     this.viewTitle.textContent = 'Channels';
     this.renderChannelSubscriptionChips();
     this.videoGrid.style.display = 'none';
-    this.channelList.style.display = 'grid';
-    this.channelList.innerHTML = '';
+    this.videoGrid.innerHTML = '';
     this.showEmpty(false);
-    this.showLoading(true);
+    this.scraperPanel.style.display = '';
+    await this.loadChannelsPage();
+  },
 
+  async loadChannelsPage() {
+    this.showLoading(true);
+    this.scraperStatus.textContent = 'Loading channels...';
     try {
-      const channels = await api.getChannels(this.channelSubscriptionFilter);
-      if (channels.length === 0) {
-        const emptyMessages = {
-          all: ['No channels found', 'Sync your library to index downloaded channels.'],
-          subscribed: ['No subscribed channels', 'Subscribe to a channel to see its videos in your feed.'],
-          unsubscribed: ['No unsubscribed channels', 'You are subscribed to every channel.']
-        };
-        const [title, subtitle] = emptyMessages[this.channelSubscriptionFilter];
-        this.showEmpty(true, title, subtitle);
-      } else {
-        channels.forEach((ch) => {
-          this.channelList.appendChild(this.createChannelCard(ch));
-        });
-      }
+      const [scraperChannels, mytubeChannels] = await Promise.all([
+        api.getScraperChannels(),
+        api.getChannels('all'),
+      ]);
+      this.scraperChannels = scraperChannels;
+      this.mytubeChannelsByName = new Map(
+        mytubeChannels.map((ch) => [(ch.name || '').trim().toLowerCase(), ch])
+      );
+      const count = scraperChannels.length;
+      this.scraperStatus.textContent = `${count} ${count === 1 ? 'channel' : 'channels'} in the scraper config. Changes apply on the scraper's next run.`;
     } catch (err) {
-      console.error(err);
+      this.scraperChannels = [];
+      this.scraperStatus.textContent = err.message || 'Failed to load channels';
     } finally {
       this.showLoading(false);
     }
+    this.renderChannelRows();
+  },
+
+  renderChannelRows() {
+    const filter = this.channelSubscriptionFilter;
+    const rows = this.scraperChannels
+      .map((channel) => ({
+        channel,
+        match: this.mytubeChannelsByName.get((channel.name || '').trim().toLowerCase()) || null,
+      }))
+      .filter(({ match }) => {
+        const subscribed = Boolean(match && match.subscribed);
+        if (filter === 'subscribed') return subscribed;
+        if (filter === 'unsubscribed') return !subscribed;
+        return true;
+      });
+
+    this.scraperList.innerHTML = '';
+    if (rows.length === 0) {
+      if (this.scraperChannels.length === 0) {
+        this.showEmpty(true, 'No channels yet', 'Add a channel to have the scraper download it.');
+      } else {
+        const emptyMessages = {
+          subscribed: ['No subscribed channels', 'Subscribe to a channel to see its videos in your feed.'],
+          unsubscribed: ['No unsubscribed channels', 'You are subscribed to every channel.'],
+        };
+        const [title, subtitle] = emptyMessages[filter] || ['No channels', ''];
+        this.showEmpty(true, title, subtitle);
+      }
+      return;
+    }
+    this.showEmpty(false);
+    rows.forEach(({ channel, match }) => {
+      this.scraperList.appendChild(this.createChannelRow(channel, match));
+    });
   },
 
   renderChannelSubscriptionChips() {
@@ -1027,61 +1089,185 @@ const App = {
     this.filterChips.querySelectorAll('.chip').forEach((chip) => {
       chip.addEventListener('click', () => {
         this.channelSubscriptionFilter = chip.dataset.subscription;
-        this.renderChannelsList();
+        this.renderChannelSubscriptionChips();
+        this.renderChannelRows();
       });
     });
   },
 
-  createChannelCard(ch) {
-    const card = document.createElement('div');
-    card.className = 'channel-card';
+  createChannelRow(channel, match) {
+    const subscribed = Boolean(match && match.subscribed);
+    const row = document.createElement('li');
+    row.className = 'scraper-row';
 
-    const avatarDiv = document.createElement('div');
-    avatarDiv.className = 'channel-avatar';
-    this.populateAvatarElement(avatarDiv, ch.name, ch.thumbnail_url);
+    const identity = document.createElement(match ? 'a' : 'div');
+    identity.className = 'scraper-row-identity';
+    if (match) identity.href = `#channel/${encodeURIComponent(match.channel_id)}`;
 
-    const nameDiv = document.createElement('div');
-    nameDiv.className = 'channel-card-name';
-    nameDiv.textContent = ch.name;
+    const avatar = document.createElement('div');
+    avatar.className = 'channel-avatar';
+    this.populateAvatarElement(avatar, channel.name, match ? match.thumbnail_url : null);
 
-    const metaDiv = document.createElement('div');
-    metaDiv.className = 'channel-card-meta';
-    metaDiv.textContent = `${ch.total_videos} videos • ${this.formatFileSize(ch.total_size_bytes)}`;
+    const text = document.createElement('div');
+    text.className = 'scraper-row-text';
+    const name = document.createElement('div');
+    name.className = 'scraper-row-name';
+    name.textContent = channel.name;
+    const meta = document.createElement('div');
+    meta.className = 'scraper-row-meta';
+    meta.textContent = this.channelRowMeta(channel, match);
+    text.append(name, meta);
+    identity.append(avatar, text);
 
-    const subscribeBtn = document.createElement('button');
-    subscribeBtn.type = 'button';
-    subscribeBtn.className = 'chip channel-subscribe-btn';
-    this.updateSubscribeButton(subscribeBtn, ch.subscribed);
-    subscribeBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      subscribeBtn.disabled = true;
-      try {
-        const result = await api.setChannelSubscription(ch.channel_id, !ch.subscribed);
-        ch.subscribed = result.subscribed;
-        if (this.channelSubscriptionFilter !== 'all') {
-          this.renderChannelsList();
-          return;
-        }
-        this.updateSubscribeButton(subscribeBtn, ch.subscribed);
-        this.showToast(ch.subscribed ? `Subscribed to ${ch.name}` : `Unsubscribed from ${ch.name}`);
-      } catch (err) {
-        console.error('Failed to update subscription:', err);
-        this.showToast('Failed to update subscription');
-      } finally {
-        subscribeBtn.disabled = false;
-      }
-    });
+    const actions = document.createElement('div');
+    actions.className = 'scraper-row-actions';
 
-    card.append(avatarDiv, nameDiv, metaDiv, subscribeBtn);
-    card.addEventListener('click', () => {
-      window.location.hash = `#channel/${encodeURIComponent(ch.channel_id)}`;
-    });
-    return card;
+    const bellBtn = document.createElement('button');
+    bellBtn.type = 'button';
+    bellBtn.className = `scraper-icon-btn scraper-bell${subscribed ? ' active' : ''}`;
+    bellBtn.innerHTML = subscribed ? this.icons.bell : this.icons.bellOff;
+    bellBtn.disabled = !match;
+    bellBtn.title = match ? (subscribed ? 'Unsubscribe' : 'Subscribe') : 'Not downloaded yet';
+    bellBtn.setAttribute('aria-label', bellBtn.title);
+    bellBtn.addEventListener('click', () => this.toggleChannelSubscription(match, channel.name));
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'scraper-icon-btn';
+    editBtn.innerHTML = this.icons.pencil;
+    editBtn.title = 'Edit scraper settings';
+    editBtn.setAttribute('aria-label', 'Edit scraper settings');
+    editBtn.addEventListener('click', () => this.openScraperForm(channel));
+
+    actions.append(bellBtn, editBtn);
+    row.append(identity, actions);
+    return row;
   },
 
-  updateSubscribeButton(button, subscribed) {
-    button.classList.toggle('active', subscribed);
-    button.textContent = subscribed ? 'Subscribed' : 'Subscribe';
+  channelRowMeta(channel, match) {
+    const parts = [];
+    if (match) {
+      parts.push(`${match.total_videos} ${match.total_videos === 1 ? 'video' : 'videos'}`);
+      parts.push(match.latest_upload_date ? `Last video ${this.formatUploadDate(match.latest_upload_date)}` : 'No uploads yet');
+    } else {
+      parts.push('Not downloaded yet');
+    }
+    if (channel.enabled === false) parts.push('Disabled');
+    return parts.join(' • ');
+  },
+
+  async toggleChannelSubscription(match, name) {
+    if (!match) return;
+    try {
+      const result = await api.setChannelSubscription(match.channel_id, !match.subscribed);
+      match.subscribed = result.subscribed;
+      this.showToast(match.subscribed ? `Subscribed to ${name}` : `Unsubscribed from ${name}`);
+    } catch (err) {
+      console.error('Failed to update subscription:', err);
+      this.showToast('Failed to update subscription');
+    }
+    this.renderChannelRows();
+  },
+
+  // =========================================================
+  // Scraper Channels Panel (Channels page): manages youtube_scrapper channels.json
+  // =========================================================
+  openScraperForm(channel = null) {
+    const defaults = {
+      mode: 'video',
+      resolution: 1080,
+      audio_format: 'm4a',
+      voice_language: '',
+      subtitle_language: '',
+      min_views: 0,
+      title_contains: '',
+      min_duration_minutes: 5,
+      date_days: 5,
+      enabled: true,
+    };
+    const values = { ...defaults, ...(channel || {}) };
+    this.scraperForm.reset();
+    for (const [key, value] of Object.entries(values)) {
+      const field = this.scraperForm.elements.namedItem(key);
+      if (!field) continue;
+      if (field.type === 'checkbox') {
+        field.checked = Boolean(value);
+      } else {
+        if (field.tagName === 'SELECT') this.ensureSelectOption(field, String(value));
+        field.value = String(value);
+      }
+    }
+    this.scraperEditingName = channel ? channel.name : null;
+    this.scraperSaveBtn.textContent = channel ? 'Save channel' : 'Add channel';
+    this.scraperDeleteBtn.style.display = channel ? '' : 'none';
+    this.scraperFormError.textContent = '';
+    this.scraperForm.style.display = '';
+    this.scraperForm.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    this.scraperForm.elements.namedItem('name').focus();
+  },
+
+  // Keeps a channels.json value that is not one of the preset options, so it is not lost on save
+  ensureSelectOption(select, value) {
+    select.querySelectorAll('option[data-custom]').forEach((option) => option.remove());
+    if (![...select.options].some((option) => option.value === value)) {
+      const option = new Option(value, value);
+      option.dataset.custom = '';
+      select.add(option);
+    }
+  },
+
+  closeScraperForm() {
+    this.scraperEditingName = null;
+    this.scraperForm.reset();
+    this.scraperForm.style.display = 'none';
+    this.scraperDeleteBtn.style.display = 'none';
+    this.scraperFormError.textContent = '';
+  },
+
+  async saveScraperChannel(event) {
+    event.preventDefault();
+    const field = (key) => this.scraperForm.elements.namedItem(key);
+    const channel = {
+      name: field('name').value.trim(),
+      url: field('url').value.trim(),
+      mode: field('mode').value,
+      resolution: Number(field('resolution').value),
+      audio_format: field('audio_format').value,
+      voice_language: field('voice_language').value.trim(),
+      subtitle_language: field('subtitle_language').value.trim(),
+      min_views: Number(field('min_views').value),
+      title_contains: field('title_contains').value.trim(),
+      min_duration_minutes: Number(field('min_duration_minutes').value),
+      date_days: Number(field('date_days').value),
+      enabled: field('enabled').checked,
+    };
+    const isEdit = this.scraperEditingName !== null;
+    this.scraperSaveBtn.disabled = true;
+    this.scraperFormError.textContent = '';
+    try {
+      await api.saveScraperChannel(channel, this.scraperEditingName);
+      this.showToast(isEdit ? `Saved ${channel.name}` : `Added ${channel.name}`);
+      this.closeScraperForm();
+      await this.loadChannelsPage();
+    } catch (err) {
+      this.scraperFormError.textContent = err.message;
+    } finally {
+      this.scraperSaveBtn.disabled = false;
+    }
+  },
+
+  async removeScraperChannel(name) {
+    if (!name) return;
+    const confirmed = confirm(`Remove ${name} from the scraper config? The scraper stops checking it on its next run. Files already downloaded are not deleted.`);
+    if (!confirmed) return;
+    try {
+      await api.deleteScraperChannel(name);
+      if (this.scraperEditingName === name) this.closeScraperForm();
+      this.showToast(`Removed ${name}`);
+      await this.loadChannelsPage();
+    } catch (err) {
+      this.showToast(err.message || 'Failed to remove channel');
+    }
   },
 
   formatFileSize(bytes) {
@@ -1100,7 +1286,6 @@ const App = {
     let shouldCheckAutoLoad = false;
     if (!append) {
       this.videoGrid.style.display = 'grid';
-      this.channelList.style.display = 'none';
       this.videoGrid.innerHTML = '';
       this.renderUnwatchedToggle();
     }
@@ -1159,7 +1344,6 @@ const App = {
       this.viewTitle.textContent = 'Gone soon';
       this.renderUnwatchedToggle('<div class="gone-soon-note">Oldest subscribed videos. They are deleted automatically when storage is full.</div>');
       this.videoGrid.style.display = 'grid';
-      this.channelList.style.display = 'none';
       this.videoGrid.innerHTML = '';
       this.showEmpty(false);
     }
@@ -1195,7 +1379,6 @@ const App = {
     this.viewTitle.textContent = `Search: "${this.searchQuery}"`;
     this.filterChips.innerHTML = '';
     this.videoGrid.style.display = 'grid';
-    this.channelList.style.display = 'none';
     this.videoGrid.innerHTML = '';
     this.showEmpty(false);
     this.showLoading(true);

@@ -1,12 +1,12 @@
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.config import BASE_DIR
 from backend.database import get_db, init_db
@@ -17,6 +17,7 @@ from backend.cleanup_service import CleanupService
 from backend.movies_service import MoviesService
 from backend.shows_service import ShowsService
 from backend.user_service import UserService
+from backend.scraper_channels_service import ScraperChannelError, ScraperChannelService
 from backend.jellyfin_client import jellyfin
 from backend.synthesis_service import SynthesisError, synthesize_subtitle
 
@@ -48,6 +49,20 @@ class UserPayload(BaseModel):
 
 class SubscriptionPayload(BaseModel):
     subscribed: bool
+
+class ScraperChannelPayload(BaseModel):
+    name: str
+    url: str
+    mode: Literal["video", "audio"] = "video"
+    resolution: Literal[480, 720, 1080, 1440, 2160] = 1080
+    audio_format: Literal["m4a", "mp3", "flac"] = "m4a"
+    voice_language: str = ""
+    subtitle_language: str = ""
+    min_views: int = Field(0, ge=0)
+    title_contains: str = ""
+    min_duration_minutes: int = Field(5, ge=0)
+    date_days: int = Field(5, ge=0)
+    enabled: bool = True
 
 class SynthesisPayload(BaseModel):
     subtitle_index: int
@@ -145,6 +160,37 @@ def set_channel_subscription(
         raise HTTPException(status_code=404, detail="Channel not found")
     UserService.set_subscription(user["user_id"], channel_id, payload.subscribed)
     return {"channel_id": channel_id, "subscribed": payload.subscribed}
+
+def _scraper_call(func, *args):
+    try:
+        return func(*args)
+    except ScraperChannelError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+@app.get("/api/scraper/channels")
+def list_scraper_channels(user: Dict[str, Any] = Depends(get_current_user)):
+    """All channels in the youtube_scrapper channels.json, as the scraper reads them."""
+    return {"channels": _scraper_call(ScraperChannelService.list_channels)}
+
+@app.post("/api/scraper/channels", status_code=201)
+def add_scraper_channel(payload: ScraperChannelPayload, user: Dict[str, Any] = Depends(get_current_user)):
+    """Add a channel to the scraper config. The scraper's next run picks it up."""
+    return _scraper_call(ScraperChannelService.add_channel, payload.model_dump())
+
+@app.put("/api/scraper/channels/{name:path}")
+def update_scraper_channel(
+    name: str,
+    payload: ScraperChannelPayload,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Replace a scraper channel's settings, looked up by its current name."""
+    return _scraper_call(ScraperChannelService.update_channel, name, payload.model_dump())
+
+@app.delete("/api/scraper/channels/{name:path}", status_code=204)
+def delete_scraper_channel(name: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Remove a channel from the scraper config. Downloaded files are not deleted."""
+    _scraper_call(ScraperChannelService.delete_channel, name)
+    return Response(status_code=204)
 
 @app.get("/api/channels/{channel_id}/videos")
 def get_channel_videos(

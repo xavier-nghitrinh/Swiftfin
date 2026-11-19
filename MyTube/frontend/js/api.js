@@ -90,6 +90,37 @@ const api = {
     return await res.json();
   },
 
+  async getScraperChannels() {
+    const res = await this.request(`${API_BASE}/scraper/channels`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `Failed to fetch scraper channels: ${res.statusText}`);
+    return body.channels;
+  },
+
+  /** Adds a channel when originalName is null, otherwise replaces the channel with that name. */
+  async saveScraperChannel(channel, originalName = null) {
+    const isNew = originalName === null;
+    const path = isNew
+      ? `${API_BASE}/scraper/channels`
+      : `${API_BASE}/scraper/channels/${encodeURIComponent(originalName)}`;
+    const res = await this.request(path, {
+      method: isNew ? 'POST' : 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(channel)
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `Failed to save channel: ${res.statusText}`);
+    return body;
+  },
+
+  async deleteScraperChannel(name) {
+    const res = await this.request(`${API_BASE}/scraper/channels/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(typeof body.detail === 'string' ? body.detail : `Failed to remove channel: ${res.statusText}`);
+    }
+  },
+
   async getHomeFeed(limit = 50, offset = 0, unplayedOnly = true) {
     const params = new URLSearchParams({
       limit: limit.toString(),

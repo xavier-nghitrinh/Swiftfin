@@ -12,7 +12,7 @@
   <meta name="description" content="Personal YouTube Subscription Feed & Streaming Engine">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=15">
+  <link rel="stylesheet" href="/css/style.css?v=20">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff0000'><path d='M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z'/></svg>">
 </head>
 <body>
@@ -91,6 +91,60 @@
           <div class="filter-chips" id="filter-chips"></div>
         </div>
 
+        <section class="scraper-panel" id="scraper-panel" style="display: none;" aria-label="Channels">
+            <div class="scraper-panel-header">
+              <p class="scraper-status" id="scraper-status"></p>
+              <button type="button" class="chip active" id="scraper-add-btn">Add channel</button>
+            </div>
+
+            <form class="scraper-form" id="scraper-form" style="display: none;">
+              <div class="scraper-form-grid">
+                <label class="scraper-field"><span>Display name</span><input name="name" type="text" required></label>
+                <label class="scraper-field"><span>YouTube URL</span><input name="url" type="text" required></label>
+                <label class="scraper-field"><span>Download mode</span>
+                  <select name="mode"><option value="video">video</option><option value="audio">audio</option></select>
+                </label>
+                <label class="scraper-field"><span>Maximum video resolution</span>
+                  <select name="resolution">
+                    <option value="480">480</option><option value="720">720</option><option value="1080">1080</option>
+                    <option value="1440">1440</option><option value="2160">2160</option>
+                  </select>
+                </label>
+                <label class="scraper-field"><span>Audio output format</span>
+                  <select name="audio_format"><option value="m4a">m4a</option><option value="mp3">mp3</option><option value="flac">flac</option></select>
+                </label>
+                <label class="scraper-field"><span>Voice language</span>
+                  <select name="voice_language">
+                    <option value="">default</option><option value="vi">vi</option><option value="en">en</option>
+                    <option value="ja">ja</option><option value="ko">ko</option>
+                  </select>
+                </label>
+                <label class="scraper-field"><span>Subtitle language</span>
+                  <select name="subtitle_language">
+                    <option value="">none</option><option value="vi, en">vi, en</option><option value="en, vi">en, vi</option>
+                    <option value="vi">vi</option><option value="en">en</option><option value="ja">ja</option><option value="ko">ko</option>
+                  </select>
+                </label>
+                <label class="scraper-field"><span>Minimum views (0 disables)</span><input name="min_views" type="number" min="0" step="1" required></label>
+                <label class="scraper-field"><span>Title contains phrase (optional)</span><input name="title_contains" type="text"></label>
+                <label class="scraper-field"><span>Minimum duration (minutes)</span><input name="min_duration_minutes" type="number" min="0" step="1" required></label>
+                <label class="scraper-field"><span>Recent upload window (days; 0 = all)</span><input name="date_days" type="number" min="0" step="1" required></label>
+                <label class="scraper-field scraper-checkbox"><input name="enabled" type="checkbox"><span>Enabled</span></label>
+              </div>
+              <p class="scraper-form-error" id="scraper-form-error" role="alert"></p>
+              <div class="scraper-form-actions">
+                <button type="button" class="scraper-icon-btn scraper-delete-btn" id="scraper-delete-btn" aria-label="Remove channel" title="Remove channel" style="display: none;">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </button>
+                <span class="scraper-form-spacer"></span>
+                <button type="button" class="chip" id="scraper-cancel-btn">Cancel</button>
+                <button type="submit" class="chip active" id="scraper-save-btn">Add channel</button>
+              </div>
+            </form>
+
+            <ul class="scraper-list" id="scraper-list"></ul>
+        </section>
+
         <div class="netflix-shelf feed-continue-watching" id="feed-continue-watching" style="display: none;">
           <div class="shelf-header">
             <h3 class="shelf-title">Continue Watching</h3>
@@ -100,7 +154,6 @@
 
         <div id="content-container">
           <div class="video-grid" id="video-grid"></div>
-          <div class="channel-list" id="channel-list" style="display: none;"></div>
         </div>
 
         <div id="loading-spinner" style="text-align: center; padding: 40px; display: none;">
@@ -326,9 +379,9 @@
   <script src="/js/hls.min.js"></script>
   <script src="/js/marked.umd.js"></script>
   <script src="/js/purify.min.js"></script>
-  <script src="/js/api.js?v=14"></script>
+  <script src="/js/api.js?v=16"></script>
   <script src="/js/player.js?v=15"></script>
-    <script src="/js/app.js?v=19"></script>
+    <script src="/js/app.js?v=26"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.warn);
