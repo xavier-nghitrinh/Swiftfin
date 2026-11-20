@@ -95,6 +95,18 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 - **On Android / iPhone / iPad:** `http://<YOUR_PC_LAN_IP>:8000` (e.g., `http://192.168.1.100:8000`)
 - On mobile browsers, tap **"Add to Home Screen"** to install as a full standalone app!
 
+### 2b. Android App (background playback)
+Chrome on Android only installs the PWA over HTTPS and pauses video when the screen locks or you switch apps. `MyTube/android/` is a thin WebView wrapper that loads the same web UI from the server, so web UI changes need no APK rebuild. It adds a media notification, lock-screen/Bluetooth controls, and keeps playback alive in the background.
+
+Build (requires JDK 17 and the Android SDK; `local.properties` holds `sdk.dir`):
+```powershell
+cd MyTube\android
+.\gradlew.bat assembleDebug
+```
+Install `app\build\outputs\apk\debug\app-debug.apk` on the phone (allow "Install unknown apps"). On first launch, enter the server address, e.g. `http://192.168.1.108:8000`. Long-press the app icon → **Change server** to edit it later.
+
+Rebuild the APK only when the native wrapper changes. The web player talks to it through `window.MyTubeAndroid` (see `notifyNativePlayback` / `nativeCommand` in `frontend/js/player.js`).
+
 ### 3. Automated Scraper Sync
 When `youtube_scrapper/runner.py` finishes downloading new videos, it automatically:
 1. Calls Jellyfin library refresh.

@@ -935,6 +935,7 @@ const Player = {
   },
 
   updateMediaSessionPosition() {
+    this.notifyNativePlayback(!this.video.paused);
     if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function') return;
     const dur = this.getDuration();
     const cur = this.getCurrentTime();
@@ -946,6 +947,53 @@ const Player = {
         position: Math.max(0, Math.min(cur, dur))
       });
     } catch (e) {}
+  },
+
+  // Android wrapper app (MyTube/android): drives the background-playback service and lock-screen controls.
+  notifyNativePlayback(isPlaying) {
+    const bridge = window.MyTubeAndroid;
+    if (!bridge || !this.isActive || !this.currentVideo) return;
+    const num = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
+    try {
+      const thumb = this.currentVideo.thumbnail_url;
+      bridge.onPlaybackState(
+        !!isPlaying,
+        this.currentVideo.title || '',
+        this.currentVideo.channel_name || '',
+        thumb ? new URL(thumb, window.location.href).href : '',
+        num(this.getCurrentTime()),
+        num(this.getDuration()),
+        num(this.video.playbackRate) || 1
+      );
+    } catch (e) {}
+  },
+
+  nativeCommand(command, arg) {
+    if (!this.isActive) return;
+    switch (command) {
+      case 'play':
+        this.wantPlaying = true;
+        this.video.play().catch(console.warn);
+        break;
+      case 'pause':
+        this.wantPlaying = false;
+        this.video.pause();
+        break;
+      case 'seekbackward':
+        this.seekTo(this.getCurrentTime() - 10);
+        this.updateMediaSessionPosition();
+        break;
+      case 'seekforward':
+        this.seekTo(this.getCurrentTime() + 10);
+        this.updateMediaSessionPosition();
+        break;
+      case 'seekto':
+        if (Number.isFinite(arg)) {
+          this.seekTo(arg);
+          this.updateMediaSessionPosition();
+        }
+        break;
+    }
   },
 
   buildQualityMenu(qualities, currentQuality) {
@@ -1400,6 +1448,7 @@ const Player = {
         navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
       } catch (e) {}
     }
+    this.notifyNativePlayback(isPlaying);
 
     if (isPlaying) {
       this.showOverlay();
@@ -1526,6 +1575,9 @@ const Player = {
       fetch('/api/videos/stop-encodings', { method: 'POST', keepalive: true }).catch(() => {});
     }
     this.isActive = false;
+    if (window.MyTubeAndroid) {
+      try { window.MyTubeAndroid.onPlaybackStopped(); } catch (e) {}
+    }
     this.destroyHls();
     this.clearSubtitles();
     this.video.pause();
