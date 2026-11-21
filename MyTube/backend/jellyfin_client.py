@@ -14,6 +14,8 @@ from backend.config import (
 
 logger = logging.getLogger("mytube.jellyfin")
 
+JELLYFIN_PAGE_SIZE = 500
+
 class JellyfinClient:
     def __init__(
         self,
@@ -64,6 +66,26 @@ class JellyfinClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _get_all_items(self, params: Dict[str, Any], timeout: int) -> List[Dict[str, Any]]:
+        """Fetch every page of an Items query. Raises on a short read so callers never reconcile against a partial list."""
+        url = f"{self.base_url}/Users/{self.user_id}/Items"
+        items: List[Dict[str, Any]] = []
+        while True:
+            page_params = {**params, "StartIndex": len(items), "Limit": JELLYFIN_PAGE_SIZE}
+            resp = self.session.get(url, params=page_params, timeout=timeout)
+            resp.raise_for_status()
+            body = resp.json()
+            page = body.get("Items", [])
+            items.extend(page)
+            total = body.get("TotalRecordCount")
+            if total is None:
+                if len(page) < JELLYFIN_PAGE_SIZE:
+                    return items
+            elif len(items) >= total:
+                return items
+            elif not page:
+                raise RuntimeError(f"Jellyfin returned {len(items)} of {total} items")
+
     def get_library_items(self) -> List[Dict[str, Any]]:
         """Fetch all video items from the YouTube library."""
         params = {
@@ -71,12 +93,8 @@ class JellyfinClient:
             "Recursive": "true",
             "IncludeItemTypes": "Video",
             "Fields": "Path,Overview,PremiereDate,ProductionYear,DateCreated,MediaSources,MediaStreams,UserData,RunTimeTicks,Genres,OfficialRating",
-            "Limit": 5000,
         }
-        url = f"{self.base_url}/Users/{self.user_id}/Items"
-        resp = self.session.get(url, params=params, timeout=20)
-        resp.raise_for_status()
-        return resp.json().get("Items", [])
+        return self._get_all_items(params, timeout=20)
 
     def get_movie_items(self) -> List[Dict[str, Any]]:
         """Fetch all movies from the Movies library."""
@@ -85,12 +103,8 @@ class JellyfinClient:
             "Recursive": "true",
             "IncludeItemTypes": "Movie",
             "Fields": "Path,Overview,PremiereDate,ProductionYear,DateCreated,MediaSources,MediaStreams,UserData,RunTimeTicks,Genres,OfficialRating,CommunityRating,ImageTags,BackdropImageTags",
-            "Limit": 5000,
         }
-        url = f"{self.base_url}/Users/{self.user_id}/Items"
-        resp = self.session.get(url, params=params, timeout=20)
-        resp.raise_for_status()
-        return resp.json().get("Items", [])
+        return self._get_all_items(params, timeout=20)
 
     def get_show_items(self) -> List[Dict[str, Any]]:
         """Fetch all series from the Shows library."""
@@ -98,12 +112,8 @@ class JellyfinClient:
             "ParentId": self.shows_library_id,
             "IncludeItemTypes": "Series",
             "Fields": "Path,Overview,PremiereDate,ProductionYear,DateCreated,MediaSources,UserData,RunTimeTicks,Genres,OfficialRating,CommunityRating,Status,ImageTags,BackdropImageTags",
-            "Limit": 5000,
         }
-        url = f"{self.base_url}/Users/{self.user_id}/Items"
-        resp = self.session.get(url, params=params, timeout=20)
-        resp.raise_for_status()
-        return resp.json().get("Items", [])
+        return self._get_all_items(params, timeout=20)
 
     def get_episode_items(self, show_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Fetch all episodes from the Shows library (optionally filtered by series ID)."""
@@ -113,12 +123,8 @@ class JellyfinClient:
             "Recursive": "true",
             "IncludeItemTypes": "Episode",
             "Fields": "Path,Overview,PremiereDate,ProductionYear,DateCreated,MediaSources,MediaStreams,UserData,RunTimeTicks,SeasonId,SeasonName,SeriesId,SeriesName,IndexNumber,ParentIndexNumber,ImageTags",
-            "Limit": 10000,
         }
-        url = f"{self.base_url}/Users/{self.user_id}/Items"
-        resp = self.session.get(url, params=params, timeout=25)
-        resp.raise_for_status()
-        return resp.json().get("Items", [])
+        return self._get_all_items(params, timeout=25)
 
     def get_item_details(self, item_id: str) -> Dict[str, Any]:
         url = f"{self.base_url}/Users/{self.user_id}/Items/{item_id}"

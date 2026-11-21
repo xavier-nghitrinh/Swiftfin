@@ -95,15 +95,20 @@ class PlaybackService:
         unsupported_audio_codecs = {"truehd", "eac3", "dts", "dtshd", "dca", "mlp"}
         needs_audio_transcode = target_audio_codec in unsupported_audio_codecs
 
-        # Quality presets
+        # Quality presets (bitrate in bits/sec; MB/h is derived from it, decimal MB)
         quality_map = {
-            "1080p": {"width": 1920, "height": 1080, "bitrate": 10000000, "label": "1080p (10 Mbps)"},
-            "720p": {"width": 1280, "height": 720, "bitrate": 4000000, "label": "720p (4 Mbps)"},
-            "480p": {"width": 854, "height": 480, "bitrate": 1500000, "label": "480p (1.5 Mbps)"},
+            "1080p": {"width": 1920, "height": 1080, "bitrate": 10000000},
+            "720p": {"width": 1280, "height": 720, "bitrate": 4000000},
+            "480p": {"width": 854, "height": 480, "bitrate": 1500000},
+            "360p": {"width": 640, "height": 360, "bitrate": 750000},
+            "240p": {"width": 426, "height": 240, "bitrate": 400000},
+            "144p": {"width": 256, "height": 144, "bitrate": 150000},
         }
 
-        # Resolve requested quality
-        if quality is None or quality == "direct":
+        # Resolve requested quality; no quality requested defaults to 480p, explicit "direct" keeps the original stream
+        if quality is None:
+            quality = "480p"
+        if quality == "direct":
             active_quality = "direct"
             use_hls = False
             q_cfg = quality_map["1080p"]
@@ -121,22 +126,31 @@ class PlaybackService:
             # Enforce 1080p HLS + AAC transcode if 4K, HEVC, unsupported audio, or audio track switch
             use_hls = bool(is_over_1080p or is_hevc or needs_audio_transcode or use_hls_for_audio)
 
+        def preset_entry(preset_id):
+            mb_per_hour = round(quality_map[preset_id]["bitrate"] * 3600 / 8 / 1000000)
+            return {
+                "id": preset_id,
+                "label": f"{preset_id} ({mb_per_hour} MB/h)",
+                "is_active": active_quality == preset_id,
+                "mb_per_hour": mb_per_hour,
+            }
+
         available_qualities = [
-            {"id": "auto", "label": "Auto (1080p)", "is_active": active_quality == "auto"},
-            {"id": "1080p", "label": "1080p (10 Mbps)", "is_active": active_quality == "1080p"},
-            {"id": "720p", "label": "720p (4 Mbps)", "is_active": active_quality == "720p"},
-            {"id": "480p", "label": "480p (1.5 Mbps)", "is_active": active_quality == "480p"},
+            {"id": "auto", "label": "Auto (1080p)", "is_active": active_quality == "auto", "mb_per_hour": None},
+            *[preset_entry(preset_id) for preset_id in ("1080p", "720p", "480p", "360p", "240p", "144p")],
         ]
         if audio_tracks:
             available_qualities.append({
                 "id": "audio_only",
                 "label": "Audio only",
                 "is_active": active_quality == "audio_only",
+                "mb_per_hour": None,
             })
         available_qualities.append({
             "id": "direct",
             "label": "Original / Direct",
             "is_active": active_quality == "direct",
+            "mb_per_hour": None,
         })
 
         # Clean up any previous active ffmpeg encoding sessions before starting a new stream

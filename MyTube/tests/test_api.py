@@ -53,9 +53,14 @@ def test_playback_defaults_to_original_direct(monkeypatch):
 
     result = PlaybackService.get_playback_data("test-video", "user-1")
 
-    assert result["current_quality"] == "direct"
-    assert result["use_hls"] is False
-    assert next(q for q in result["qualities"] if q["id"] == "direct")["is_active"] is True
+    assert result["current_quality"] == "480p"
+    assert result["use_hls"] is True
+    assert next(q for q in result["qualities"] if q["id"] == "480p")["is_active"] is True
+    assert next(q for q in result["qualities"] if q["id"] == "480p")["label"] == "480p (675 MB/h)"
+
+    direct = PlaybackService.get_playback_data("test-video", "user-1", quality="direct")
+    assert direct["current_quality"] == "direct"
+    assert direct["use_hls"] is False
 
 
 def test_playback_audio_only_uses_selected_audio_track(monkeypatch):
@@ -461,6 +466,71 @@ def test_scan_drops_rows_missing_from_jellyfin_but_not_on_empty_fetch(temp_db, m
     result = scanner.scan_and_sync()
     assert _video_ids() == ["kept"]
     assert result["removed_videos"] == 1
+
+def _seed_movie(movie_id):
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO movies (movie_id, title, file_path, jellyfin_item_id, created_at, updated_at)
+               VALUES (?, ?, '', ?, '2024-01-01T00:00:00+00:00', '2024-01-01T00:00:00+00:00')""",
+            (movie_id, f"Movie {movie_id}", movie_id),
+        )
+        conn.commit()
+
+def test_movie_sync_removes_items_deleted_in_jellyfin_with_their_progress(temp_db, monkeypatch):
+    import backend.scanner as scanner
+
+    _seed_movie("kept")
+    _seed_movie("gone")
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO user_progress (user_id, media_id, media_type, watched, playback_position, updated_at)
+               VALUES ('u1', 'gone', 'movie', 0, 10, '2024-01-01T00:00:00+00:00')"""
+        )
+        conn.commit()
+    monkeypatch.setattr(scanner.jellyfin, "get_image_bytes", lambda *args, **kwargs: None)
+
+    monkeypatch.setattr(scanner.jellyfin, "get_movie_items", lambda: [{"Id": "kept", "Name": "Movie kept"}])
+    assert scanner.sync_movies()["removed_movies"] == 1
+    with get_db() as conn:
+        assert [r["movie_id"] for r in conn.execute("SELECT movie_id FROM movies")] == ["kept"]
+        assert conn.execute("SELECT COUNT(*) FROM user_progress WHERE media_id = 'gone'").fetchone()[0] == 0
+
+    monkeypatch.setattr(scanner.jellyfin, "get_movie_items", lambda: [])
+    assert scanner.sync_movies()["removed_movies"] == 0
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM movies").fetchone()[0] == 1
+
+def _paged_response(items, total):
+    class _Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"Items": items, "TotalRecordCount": total}
+
+    return _Response()
+
+def test_jellyfin_fetch_pages_through_whole_library(monkeypatch):
+    import backend.jellyfin_client as jellyfin_client
+
+    monkeypatch.setattr(jellyfin_client, "JELLYFIN_PAGE_SIZE", 2)
+    all_items = [{"Id": f"id-{i}"} for i in range(5)]
+    jf = JellyfinClient(base_url="http://jf", api_key="k", user_id="u", library_id="l")
+    monkeypatch.setattr(
+        jf.session, "get",
+        lambda url, params, timeout: _paged_response(
+            all_items[params["StartIndex"]:params["StartIndex"] + params["Limit"]], len(all_items)
+        ),
+    )
+
+    assert jf.get_library_items() == all_items
+
+def test_jellyfin_fetch_raises_on_short_read_instead_of_returning_partial_list(monkeypatch):
+    jf = JellyfinClient(base_url="http://jf", api_key="k", user_id="u", library_id="l")
+    monkeypatch.setattr(jf.session, "get", lambda url, params, timeout: _paged_response([], 3))
+
+    with pytest.raises(RuntimeError):
+        jf.get_movie_items()
 
 def test_api():
     print("=== Testing MyTube Backend API ===")

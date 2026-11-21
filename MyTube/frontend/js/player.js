@@ -18,14 +18,11 @@ const Player = {
   overlay: null,
   bottomBar: null,
   subtitleOverlay: null,
-  titleEl: null,
   seekbar: null,
   seekbarContainer: null,
   timeDisplay: null,
   playBtn: null,
-  overlayPlayBtn: null,
   playIcon: null,
-  overlayPlayIcon: null,
   qualityBtn: null,
   audioBtn: null,
   subBtn: null,
@@ -67,7 +64,9 @@ const Player = {
   lastJellyfinProgressSync: 0,
   overlayHideTimeout: null,
   onWatchedAutoTriggered: null,
-
+  dataUsageEl: null,
+  consumedBytes: 0,
+  lastUsageMediaTime: null,
   // Double-tap & Tap state
   doubleTapLeft: null,
   doubleTapRight: null,
@@ -76,6 +75,8 @@ const Player = {
   singleTapTimer: null,
   consecutiveTapCount: 0,
   doubleTapIndicatorTimer: null,
+  seekStepSeconds: 5,
+  justSwiped: false,
 
   init() {
     this.container = document.getElementById('player-container');
@@ -85,14 +86,12 @@ const Player = {
     this.doubleTapLeft = document.getElementById('double-tap-left');
     this.doubleTapRight = document.getElementById('double-tap-right');
     this.subtitleOverlay = document.getElementById('player-subtitle-overlay');
-    this.titleEl = document.getElementById('player-title');
     this.seekbar = document.getElementById('player-seekbar');
     this.seekbarContainer = this.seekbar ? this.seekbar.parentElement : null;
     this.timeDisplay = document.getElementById('player-time-display');
     this.playBtn = document.getElementById('player-play-btn');
-    this.overlayPlayBtn = document.getElementById('overlay-play-btn');
     this.playIcon = document.getElementById('play-pause-icon');
-    this.overlayPlayIcon = document.getElementById('overlay-play-icon');
+    this.dataUsageEl = document.getElementById('player-data-usage');
     this.qualityBtn = document.getElementById('player-quality-btn');
     this.audioBtn = document.getElementById('player-audio-btn');
     this.subBtn = document.getElementById('player-sub-btn');
@@ -132,15 +131,6 @@ const Player = {
   },
 
   bindEvents() {
-    document.getElementById('player-close-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (this.isFullscreen()) {
-        this.exitFullscreen();
-        return;
-      }
-      if (window.App) window.App.goBack();
-    });
-
     const togglePlay = (e) => {
       if (e) e.stopPropagation();
       if (this.justFinishedHold) return;
@@ -155,17 +145,6 @@ const Player = {
 
     // Bottom bar play/pause button always toggles immediately
     this.playBtn.addEventListener('click', togglePlay);
-
-    // Center big play/pause button: on touch devices, only toggle play if overlay was already visible when finger touched down
-    this.overlayPlayBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (this.justFinishedHold) return;
-      if (this.lastPointerType === 'touch' && !this.wasOverlayVisibleOnDown) {
-        this.showOverlay();
-        return;
-      }
-      togglePlay();
-    });
 
     this.video.addEventListener('play', () => {
       this.wantPlaying = true;
@@ -330,10 +309,10 @@ const Player = {
 
     // Unified Tap / Click / Double-Tap on video background
     this.container.addEventListener('click', (e) => {
-      if (this.justFinishedHold) return;
+      if (this.justFinishedHold || this.justSwiped) return;
 
       // Ignore clicks on control buttons, sliders, menus
-      if (e.target.closest('button, input, .dropdown-menu, .overlay-bottom, .overlay-top')) {
+      if (e.target.closest('button, input, .dropdown-menu, .overlay-bottom')) {
         return;
       }
 
@@ -365,7 +344,7 @@ const Player = {
         }
         this.consecutiveTapCount++;
 
-        const step = 10;
+        const step = this.seekStepSeconds;
         if (zone === 'left') {
           this.seekTo(this.getCurrentTime() - step);
         } else {
@@ -451,11 +430,11 @@ const Player = {
         togglePlay();
       } else if (e.key === 'ArrowLeft' || e.key === 'j') {
         e.preventDefault();
-        this.seekTo(this.getCurrentTime() - 10);
+        this.seekTo(this.getCurrentTime() - this.seekStepSeconds);
         this.showOverlay();
       } else if (e.key === 'ArrowRight' || e.key === 'l') {
         e.preventDefault();
-        this.seekTo(this.getCurrentTime() + 10);
+        this.seekTo(this.getCurrentTime() + this.seekStepSeconds);
         this.showOverlay();
       } else if (e.key === 'f') {
         e.preventDefault();
@@ -573,6 +552,21 @@ const Player = {
     }, 650);
   },
 
+  // Horizontal swipe on touch seeks like double-tap; in pseudo-landscape the on-screen axis is rotated, matching the tap zones
+  handleSwipe(dx, dy) {
+    const pseudo = this.isPseudoLandscape();
+    const along = pseudo ? dy : dx;
+    const across = pseudo ? dx : dy;
+    if (Math.abs(along) < 50 || Math.abs(along) < Math.abs(across) * 1.5) return;
+
+    const forward = along > 0;
+    this.seekTo(this.getCurrentTime() + (forward ? this.seekStepSeconds : -this.seekStepSeconds));
+    this.onTimeUpdate();
+    this.showDoubleTapFeedback(forward ? 'right' : 'left');
+    this.justSwiped = true;
+    this.hideOverlay();
+  },
+
   setupHoldToSpeed() {
     let isPointerDown = false;
     let startX = 0;
@@ -596,14 +590,13 @@ const Player = {
 
     const startHold = (e) => {
       if (e.button && e.button !== 0) return; // Ignore right-click
+      this.justSwiped = false;
       this.lastPointerType = e.pointerType || 'mouse';
       this.wasOverlayVisibleOnDown = this.overlay.classList.contains('show');
 
       if (
         e.target.closest('.overlay-bottom') ||
-        e.target.closest('.overlay-top') ||
-        e.target.closest('.dropdown-menu') ||
-        (e.target.closest('#overlay-play-btn') && this.wasOverlayVisibleOnDown)
+        e.target.closest('.dropdown-menu')
       ) {
         return;
       }
@@ -638,6 +631,8 @@ const Player = {
     };
 
     const endHold = (e) => {
+      const isTouchRelease = Boolean(e) && e.type === 'pointerup' && isPointerDown
+        && !this.isHoldingSpeed && this.lastPointerType === 'touch';
       isPointerDown = false;
       if (this.holdTimer) {
         clearTimeout(this.holdTimer);
@@ -647,6 +642,9 @@ const Player = {
         try {
           this.container.releasePointerCapture(e.pointerId);
         } catch (err) {}
+      }
+      if (isTouchRelease) {
+        this.handleSwipe(e.clientX - startX, e.clientY - startY);
       }
       if (this.isHoldingSpeed) {
         this.isHoldingSpeed = false;
@@ -862,7 +860,7 @@ const Player = {
     this.playbackData = playbackData;
     this.currentVideo = playbackData;
     this.currentQuality = playbackData.current_quality || 'direct';
-    this.titleEl.textContent = cleanVideoTitle(playbackData.title);
+    this.resetDataUsage();
     this.showOverlay();
 
     this.buildQualityMenu(playbackData.qualities, this.currentQuality);
@@ -916,11 +914,11 @@ const Player = {
         this.video.pause();
       });
       navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-        this.seekTo(this.getCurrentTime() - (details.seekOffset || 10));
+        this.seekTo(this.getCurrentTime() - (details.seekOffset || this.seekStepSeconds));
         this.updateMediaSessionPosition();
       });
       navigator.mediaSession.setActionHandler('seekforward', (details) => {
-        this.seekTo(this.getCurrentTime() + (details.seekOffset || 10));
+        this.seekTo(this.getCurrentTime() + (details.seekOffset || this.seekStepSeconds));
         this.updateMediaSessionPosition();
       });
       navigator.mediaSession.setActionHandler('seekto', (details) => {
@@ -980,11 +978,11 @@ const Player = {
         this.video.pause();
         break;
       case 'seekbackward':
-        this.seekTo(this.getCurrentTime() - 10);
+        this.seekTo(this.getCurrentTime() - this.seekStepSeconds);
         this.updateMediaSessionPosition();
         break;
       case 'seekforward':
-        this.seekTo(this.getCurrentTime() + 10);
+        this.seekTo(this.getCurrentTime() + this.seekStepSeconds);
         this.updateMediaSessionPosition();
         break;
       case 'seekto':
@@ -1030,6 +1028,7 @@ const Player = {
     if (data) {
       this.playbackData = data;
       this.currentQuality = data.current_quality || qualityKey;
+      this.lastUsageMediaTime = null;
       this.loadStreamSource(data, currentPos, wasPlaying);
 
       if (this.qualityMenu) {
@@ -1441,7 +1440,6 @@ const Player = {
     const playSvg = '<path d="M8 5v14l11-7z"/>';
     const pauseSvg = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
     this.playIcon.innerHTML = isPlaying ? pauseSvg : playSvg;
-    this.overlayPlayIcon.innerHTML = isPlaying ? pauseSvg : playSvg;
 
     if ('mediaSession' in navigator) {
       try {
@@ -1467,6 +1465,45 @@ const Player = {
     }
     this.timeDisplay.textContent = `${this.formatTime(cur)} / ${this.formatTime(dur)}`;
     this.renderActiveSubtitleCue();
+    this.updateDataUsage();
+  },
+
+  getCurrentMbPerHour() {
+    const active = this.playbackData && this.playbackData.qualities
+      ? this.playbackData.qualities.find((q) => q.is_active)
+      : null;
+    return active && active.mb_per_hour ? active.mb_per_hour : null;
+  },
+
+  resetDataUsage() {
+    this.consumedBytes = 0;
+    this.lastUsageMediaTime = null;
+    this.renderDataUsage();
+  },
+
+  // Estimates data from played media time at the active quality's bitrate; seeks are skipped
+  updateDataUsage() {
+    const now = this.getCurrentTime();
+    const last = this.lastUsageMediaTime;
+    this.lastUsageMediaTime = now;
+    if (last === null || this.video.paused) return;
+    const delta = now - last;
+    const mbPerHour = this.getCurrentMbPerHour();
+    if (delta > 0 && delta <= 2 && mbPerHour) {
+      this.consumedBytes += delta * (mbPerHour * 1000000 / 3600);
+    }
+    this.renderDataUsage();
+  },
+
+  renderDataUsage() {
+    if (!this.dataUsageEl) return;
+    if (!this.getCurrentMbPerHour()) {
+      this.dataUsageEl.textContent = 'Data used: not available for this quality';
+      return;
+    }
+    const mb = this.consumedBytes / 1000000;
+    const text = mb >= 1000 ? `${(mb / 1000).toFixed(2)} GB` : `${mb.toFixed(1)} MB`;
+    this.dataUsageEl.textContent = `Data used: ${text}`;
   },
 
   onLoadedMetadata() {

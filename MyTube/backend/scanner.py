@@ -165,6 +165,20 @@ def sync_missing_thumbnails_to_sqlite(
         logger.info(f"Stored {cached} thumbnails as Base64 directly in SQLite.")
     return cached
 
+def _remove_missing_items(cursor, table: str, pk_col: str, jellyfin_col: str, media_type: str, present_ids: set) -> int:
+    """Delete rows whose Jellyfin item is no longer in the library, along with their watch progress."""
+    cursor.execute(
+        f"SELECT {pk_col}, {jellyfin_col} FROM {table} WHERE {jellyfin_col} IS NOT NULL AND {jellyfin_col} != ''"
+    )
+    stale = [r[pk_col] for r in cursor.fetchall() if r[jellyfin_col] not in present_ids]
+    for pk in stale:
+        cursor.execute("DELETE FROM user_progress WHERE media_id = ? AND media_type = ?", (pk, media_type))
+        cursor.execute(f"DELETE FROM {table} WHERE {pk_col} = ?", (pk,))
+    if stale:
+        logger.info(f"Removed {len(stale)} {table} rows no longer present in Jellyfin.")
+    return len(stale)
+
+
 def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
     """Scan Jellyfin items and SSD .info.json metadata incrementally, storing metadata & Base64 thumbnails in SQLite."""
     logger.info(f"Starting MyTube library scan (force_full={force_full})...")
@@ -367,19 +381,12 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
                         channel_thumb_tasks.append((channel_id, remote_channel_poster))
 
         # Reconcile: a video whose Jellyfin item is gone (deleted in Jellyfin) is removed from SQLite so
-        # MyTube does not list an unplayable file. Skipped for an empty or full (possibly truncated) page,
-        # since get_library_items fetches at most 5000 items and a short read must not wipe rows.
+        # MyTube does not list an unplayable file. Skipped for an empty fetch so a misconfigured library
+        # cannot wipe rows; get_library_items raises on partial reads, so a short page never gets here.
         removed_videos = 0
-        if jellyfin_items and len(jellyfin_items) < 5000:
+        if jellyfin_items:
             jellyfin_ids = {item["Id"] for item in jellyfin_items}
-            cursor.execute("SELECT video_id, jellyfin_item_id FROM videos WHERE jellyfin_item_id IS NOT NULL AND jellyfin_item_id != ''")
-            stale = [r for r in cursor.fetchall() if r["jellyfin_item_id"] not in jellyfin_ids]
-            for r in stale:
-                cursor.execute("DELETE FROM user_progress WHERE media_id = ? AND media_type = 'youtube'", (r["video_id"],))
-                cursor.execute("DELETE FROM videos WHERE video_id = ?", (r["video_id"],))
-            removed_videos = len(stale)
-            if removed_videos:
-                logger.info(f"Removed {removed_videos} videos no longer present in Jellyfin.")
+            removed_videos = _remove_missing_items(cursor, "videos", "video_id", "jellyfin_item_id", "youtube", jellyfin_ids)
 
         conn.commit()
 
@@ -491,6 +498,9 @@ def sync_movies() -> Dict[str, Any]:
             if not backdrop_url.startswith("data:image/") and item.get("BackdropImageTags"):
                 thumb_tasks.append((movie_id, "Backdrop/0", "backdrop_url"))
 
+        removed = 0
+        if items:
+            removed = _remove_missing_items(cursor, "movies", "movie_id", "jellyfin_item_id", "movie", {item["Id"] for item in items})
         conn.commit()
 
     cached_thumbs = 0
@@ -508,10 +518,11 @@ def sync_movies() -> Dict[str, Any]:
                     cached_thumbs += 1
             conn.commit()
 
-    logger.info(f"Movies scan complete: {synced} synced ({new_count} new), {cached_thumbs} Base64 images cached.")
+    logger.info(f"Movies scan complete: {synced} synced ({new_count} new, {removed} removed), {cached_thumbs} Base64 images cached.")
     return {
         "synced_movies": synced,
         "new_movies": new_count,
+        "removed_movies": removed,
         "cached_movie_thumbs": cached_thumbs
     }
 
@@ -594,6 +605,9 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
             if not backdrop_url.startswith("data:image/") and item.get("BackdropImageTags"):
                 show_thumb_tasks.append((show_id, "Backdrop/0", "backdrop_url"))
 
+        removed_shows = 0
+        if show_items:
+            removed_shows = _remove_missing_items(cursor, "shows", "show_id", "jellyfin_item_id", "show", {item["Id"] for item in show_items})
         conn.commit()
 
     cached_show_thumbs = 0
@@ -619,6 +633,7 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
         return {
             "synced_shows": synced_shows,
             "new_shows": new_shows,
+            "removed_shows": removed_shows,
             "synced_episodes": 0,
             "new_episodes": 0,
             "cached_show_thumbs": cached_show_thumbs
@@ -694,6 +709,9 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
             if not thumbnail_url.startswith("data:image/"):
                 episode_thumb_tasks.append(episode_id)
 
+        removed_episodes = 0
+        if episode_items:
+            removed_episodes = _remove_missing_items(cursor, "episodes", "episode_id", "jellyfin_item_id", "episode", {item["Id"] for item in episode_items})
         conn.commit()
 
     cached_ep_thumbs = 0
@@ -710,13 +728,15 @@ def sync_shows_and_episodes() -> Dict[str, Any]:
             conn.commit()
 
     logger.info(
-        f"Shows & Episodes scan complete: {synced_shows} series ({new_shows} new), "
-        f"{synced_episodes} episodes ({new_episodes} new), {cached_show_thumbs + cached_ep_thumbs} Base64 thumbnails cached."
+        f"Shows & Episodes scan complete: {synced_shows} series ({new_shows} new, {removed_shows} removed), "
+        f"{synced_episodes} episodes ({new_episodes} new, {removed_episodes} removed), {cached_show_thumbs + cached_ep_thumbs} Base64 thumbnails cached."
     )
     return {
         "synced_shows": synced_shows,
         "new_shows": new_shows,
+        "removed_shows": removed_shows,
         "synced_episodes": synced_episodes,
         "new_episodes": new_episodes,
+        "removed_episodes": removed_episodes,
         "cached_show_thumbs": cached_show_thumbs + cached_ep_thumbs
     }

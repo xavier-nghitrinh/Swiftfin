@@ -32,7 +32,10 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
    - **Subtitle Selector:** WebVTT captions directly from Jellyfin with `Off` toggle.
    - **AI Subtitle Synthesis:** While a subtitle track is selected, the sparkle button sends the complete track to Google Gemini (`GEMINI_MODEL`, default `gemini-3.5-flash-lite`) and shows a compact Markdown note in the subtitle's language. Nothing is saved. Set the `GEMINI_API_KEY` environment variable on the server; it is never stored in the repository. Rate limits and server errors are retried up to 3 times with exponential backoff.
    - **Hold for 1.8x Speed:** Press and hold screen or mouse anywhere on the video for > 250ms to speed up to 1.8x with animated on-screen badge; restores previous speed on release.
-   - **Speed Selector:** 0.5x to 2.0x.
+   - **Swipe to Seek:** On touch, swipe right to jump forward or left to jump back 5 seconds (keyboard arrows, double-tap, and lock-screen seek also use 5 seconds).
+   - **Speed Selector:** 1.0x to 2.0x.
+   - **Quality Selector:** 1080p to 144p (default 480p), with each option labeled by its estimated data use in MB per hour. Direct/original and audio-only don't show an estimate.
+   - **Data Usage Readout:** Estimated data consumed since the current playback started, shown under the player. Not stored.
    - **Fullscreen Support:** Desktop Fullscreen API + iOS Safari WebKit fullscreen.
    - **Background Playback on Lock Screen:** Utilizes `MediaSession API` so audio/video continues playing until the end of the file when phone screen is locked.
    - **Automatic Progress Sync:** Position reported every 3 seconds to keep resume points.
