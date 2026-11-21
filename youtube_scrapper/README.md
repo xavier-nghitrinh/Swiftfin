@@ -13,7 +13,7 @@ A cross-platform one-shot `ytdl-sub` runner with a Windows-only Tkinter configur
 
 ## PC Setup
 
-Install Python 3.11 or newer and FFmpeg/ffprobe. On Windows, install FFmpeg and ensure `ffmpeg.exe` and `ffprobe.exe` are on `PATH`. Install the Python requirements below; `curl-cffi` is required for Chrome impersonation.
+Install Python 3.11 or newer, FFmpeg/ffprobe, and a supported JavaScript runtime (Deno or Node.js). On Windows, ensure `ffmpeg.exe`, `ffprobe.exe`, and the JavaScript runtime are on `PATH`. The generated configuration enables both Deno and Node.js for yt-dlp. Install the Python requirements below; `curl-cffi` is required for Chrome impersonation.
 
 From this folder:
 
@@ -67,7 +67,7 @@ python -m pip install -r requirements.txt
 deno --version
 ```
 
-yt-dlp needs a supported JavaScript runtime and EJS challenge scripts to solve YouTube's signature and `n` challenges. The `ytdl-sub` dependency installs yt-dlp with its `default` extras, including the EJS scripts; Deno is installed separately by Termux. Verify Deno is available with `deno --version` (Deno 2.6.6 or newer for the yt-dlp version currently pinned by ytdl-sub). If the logs still show challenge-solving warnings, check `python -m pip show yt-dlp yt-dlp-ejs ytdl-sub` and confirm `deno` is on `PATH`.
+yt-dlp needs a supported JavaScript runtime and EJS challenge scripts to solve YouTube's signature and `n` challenges. The `ytdl-sub` dependency installs yt-dlp with its `default` extras, including the EJS scripts; Deno is installed separately by Termux. Verify Deno is available with `deno --version` (Deno 2.6.6 or newer for the yt-dlp version currently pinned by ytdl-sub). The generated configuration also enables Node.js when installed. If the logs still show challenge-solving warnings, check `python -m pip show yt-dlp yt-dlp-ejs ytdl-sub` and confirm a supported runtime is on `PATH`.
 
 Copy this folder to Termux's private home or another persistent app directory. Set the external-drive path to the path Android exposes on your device, for example `/storage/XXXX-XXXX/Media` (confirm the actual mount path on the device):
 
@@ -116,6 +116,8 @@ The UI controls `mode` (`video` or `audio`), maximum resolution (`480`, `720`, `
 For date-limited YouTube feeds, the YAML enables yt-dlp's `youtubetab.approximate_date` and `lazy_playlist`. The date-range break stops metadata scanning at the first older upload only for non-playlist URLs, which are treated as chronological feeds. Explicit playlist URLs are not assumed to be date-sorted, so they are scanned fully to avoid missing newer eligible entries after an older one. Approximate dates come from YouTube's relative-time labels and can be off by about a day; widen the window by a day if avoiding a missed boundary upload matters more than the extra scan. A view-count filter cannot be applied by YouTube to return a pre-filtered playlist: yt-dlp must inspect candidate entries to learn their dates and view counts. ytdl-sub first collects matching metadata, then starts its media-download pass, so seeing playlist scan activity before downloads is expected. For faster bounded scans, subscribe to a channel's chronological uploads feed instead of an arbitrary playlist. With `date_days` set to 0, lazy playlist mode is disabled and the entire source is intentionally scanned.
 
 The media drive has two separate Jellyfin library roots: `STORAGE_DIR/yt_video` for a TV Shows library, and `STORAGE_DIR/yt_music` for a Music library. Video content follows the Jellyfin date-based show/season/episode structure. Audio content follows the music preset's `Artist/[year] Album/track` structure and receives music tags rather than episode NFOs, so songs are not scanned as TV episodes.
+
+On Windows, generated media output paths use the extended-length `\\?\` prefix so long artist, album, and track paths can be saved without renaming them. The files remain in the configured media directory.
 
 Video mode caps format selection at the chosen height, muxes/remuxes to MKV, and only downloads subtitle tracks when explicitly selected. If no voice language is chosen, yt-dlp automatically selects the default audio track without language filtering. Audio mode extracts the chosen audio format but keeps ytdl-sub's Jellyfin episode/NFO organization.
 

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import sys
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
@@ -97,6 +98,17 @@ def configured_path(env_name: str, setting: str, settings: dict[str, Any], fallb
     return Path(configured).expanduser().resolve() if configured else fallback.resolve()
 
 
+def media_output_path(path: Path) -> str:
+    if sys.platform != "win32":
+        return str(path)
+    absolute_path = str(path.absolute())
+    if absolute_path.startswith("\\\\?\\"):
+        return absolute_path
+    if absolute_path.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + absolute_path[2:]
+    return "\\\\?\\" + absolute_path
+
+
 def validate_channels(channels: list[dict[str, Any]]) -> None:
     names: set[str] = set()
     for channel in channels:
@@ -168,11 +180,11 @@ def build_runtime_files(storage_dir: Path, history_dir: Path, channels: list[dic
         }
         if mode == "video":
             overrides.update({
-                "tv_show_directory": str(storage_dir / "yt_video"),
+                "tv_show_directory": media_output_path(storage_dir / "yt_video"),
                 "tv_show_name": name,
             })
         else:
-            overrides["music_directory"] = str(storage_dir / "yt_music")
+            overrides["music_directory"] = media_output_path(storage_dir / "yt_music")
 
         preset: dict[str, Any] = {
             "preset": parents,
@@ -189,6 +201,7 @@ def build_runtime_files(storage_dir: Path, history_dir: Path, channels: list[dic
                 "retries": 10,
                 "socket_timeout": 30,
                 "lazy_playlist": int(channel.get("date_days", 0)) > 0,
+                "js_runtimes": {"deno": {}, "node": {}},
                 "extractor_args": {
                     "youtube": {
                         "player_client": ["web_safari", "web_embedded", "-tv_downgraded"],

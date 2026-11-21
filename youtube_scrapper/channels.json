@@ -16,7 +16,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Văn Vở",
@@ -30,7 +30,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 365,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Mèo Giải Thích",
@@ -44,7 +44,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "VTV24",
@@ -58,7 +58,7 @@
       "title_contains": "Thế giới toàn cảnh | World Panorama",
       "min_duration_minutes": 5,
       "date_days": 5,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Dương Địa Lý",
@@ -72,7 +72,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Lóng",
@@ -86,7 +86,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "SAMURICE",
@@ -100,7 +100,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Mark Rober",
@@ -114,7 +114,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "KIẾN THỨC THÚ VỊ Official",
@@ -128,7 +128,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 3,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "HTX Studio",
@@ -142,7 +142,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 5,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Running Man Vietnam - Chạy Ngay Đi",
@@ -153,7 +153,7 @@
       "min_views": 100000,
       "min_duration_minutes": 60,
       "date_days": 5,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "VFacts",
@@ -167,7 +167,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 5,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Tri Thức Nhân Loại",
@@ -181,7 +181,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Người Nổi Tiếng",
@@ -195,7 +195,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Liếc.",
@@ -209,7 +209,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Phê Phim",
@@ -223,7 +223,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 365,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Phê Game",
@@ -237,7 +237,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Game Cực Hay",
@@ -251,7 +251,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Benatar Entertainment",
@@ -265,7 +265,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 90,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Saigon Tếu",
@@ -279,7 +279,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Vẽ Chuyện",
@@ -293,7 +293,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "GHIỀN ĐỊA LÝ",
@@ -307,7 +307,7 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "Bảnh Tỏn",
@@ -321,7 +321,7 @@
       "title_contains": "",
       "min_duration_minutes": 4,
       "date_days": 90,
-      "enabled": true
+      "enabled": false
     },
     {
       "name": "median",
@@ -335,6 +335,20 @@
       "title_contains": "",
       "min_duration_minutes": 5,
       "date_days": 30,
+      "enabled": false
+    },
+    {
+      "name": "[Performance] Ca Sĩ Mặt Nạ - The Masked Singer Vietnam 2026",
+      "url": "https://www.youtube.com/playlist?list=PLfNr7LIPAUt8",
+      "mode": "audio",
+      "resolution": 1080,
+      "audio_format": "mp3",
+      "voice_language": "",
+      "subtitle_language": "",
+      "min_views": 0,
+      "title_contains": "",
+      "min_duration_minutes": 0,
+      "date_days": 900,
       "enabled": true
     }
   ]
