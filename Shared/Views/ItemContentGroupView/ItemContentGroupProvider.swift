@@ -41,7 +41,7 @@ final class ItemContentGroupProvider: ViewModel, ContentGroupProvider {
             .compactMap { [weak self, weak store] change -> ContentGroupRefreshRequest? in
                 guard let self, case let .updated(update) = change else { return nil }
 
-                if update.itemID == self.id, update.metadataChanged {
+                if update.itemID == self.id, update.hasChanges {
                     return ContentGroupRefreshRequest()
                 }
 

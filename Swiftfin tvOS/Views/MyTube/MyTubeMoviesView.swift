@@ -14,6 +14,9 @@ import SwiftUI
 
 struct MyTubeMoviesView: View {
 
+    @AppStorage("myTubeUnwatchedOnly")
+    private var unplayedOnly: Bool = true
+
     let isActive: Bool
 
     init(isActive: Bool = false) {
@@ -35,7 +38,7 @@ struct MyTubeMoviesView: View {
         errorMessage = nil
 
         do {
-            data = try await MyTubeClient.shared.getMoviesHome()
+            data = try await MyTubeClient.shared.getMoviesHome(filter: unplayedOnly ? "unwatched" : "all")
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -46,11 +49,41 @@ struct MyTubeMoviesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 40) {
-                Text("Movies")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 50)
-                    .padding(.top, 20)
+                HStack(alignment: .center, spacing: 20) {
+                    Text("Movies")
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    HStack(spacing: 12) {
+                        Button {
+                            unplayedOnly = true
+                            Task { await loadMovies() }
+                        } label: {
+                            Text("Unwatched")
+                                .font(.callout)
+                                .fontWeight(unplayedOnly ? .bold : .regular)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(unplayedOnly ? Color.red : Color(white: 0.25))
+
+                        Button {
+                            unplayedOnly = false
+                            Task { await loadMovies() }
+                        } label: {
+                            Text("All Videos")
+                                .font(.callout)
+                                .fontWeight(!unplayedOnly ? .bold : .regular)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(!unplayedOnly ? Color.red : Color(white: 0.25))
+                    }
+                }
+                .padding(.horizontal, 50)
+                .padding(.top, 20)
 
                 if let errorMessage {
                     VStack(spacing: 12) {

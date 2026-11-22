@@ -172,10 +172,14 @@ final class MyTubeClient {
         return try await fetch(url)
     }
 
-    func getMoviesHome() async throws -> MyTubeMoviesHome {
+    func getMoviesHome(filter: String = "all") async throws -> MyTubeMoviesHome {
         let base = try baseURL()
         let url = base.appendingPathComponent("movies").appendingPathComponent("home")
-        return try await fetch(url)
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        components?.queryItems = [URLQueryItem(name: "filter_type", value: filter)]
+
+        guard let requestURL = components?.url else { throw MyTubeError.invalidURL }
+        return try await fetch(requestURL)
     }
 
     func getMovieDetail(movieId: String) async throws -> MyTubeMovie {

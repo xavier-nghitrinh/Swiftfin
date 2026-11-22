@@ -64,7 +64,7 @@ final class MediaProgressReporter {
         info.positionTicks = mediaSession?.observedSeconds.ticks
         info.sessionID = item.playSessionID
 
-        enqueue(Paths.reportPlaybackStopped(info))
+        enqueue(Paths.reportPlaybackStopped(info), refreshItemID: info.itemID)
     }
 
     private func report(isStart: Bool = false) {
@@ -96,7 +96,8 @@ final class MediaProgressReporter {
         }.value
     }
 
-    private func enqueue(_ request: Get.Request<Void>, isProgress: Bool = false) {
+    /// `refreshItemID` re-fetches the item after the request so open detail views see the new play state.
+    private func enqueue(_ request: Get.Request<Void>, isProgress: Bool = false, refreshItemID: String? = nil) {
         #if DEBUG
         guard Defaults[.sendProgressReports] else { return }
 
@@ -114,6 +115,7 @@ final class MediaProgressReporter {
         }
 
         let client = userSession.client
+        let session = userSession
 
         reportQueue.enqueue { [weak self, logger] in
             if let progressID {
@@ -131,6 +133,10 @@ final class MediaProgressReporter {
                 _ = try await client.send(request)
             } catch {
                 logger.warning("Unable to report playback: \(error.localizedDescription)")
+            }
+
+            if let refreshItemID {
+                _ = try? await session.getFullItem(id: refreshItemID)
             }
         }
     }
