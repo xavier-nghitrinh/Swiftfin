@@ -242,8 +242,9 @@ const api = {
     return await res.json();
   },
 
-  async getMoviesHome() {
-    const res = await this.request(`${API_BASE}/movies/home`);
+  async getMoviesHome(filterType = 'all') {
+    const params = new URLSearchParams({ filter_type: filterType });
+    const res = await this.request(`${API_BASE}/movies/home?${params}`);
     if (!res.ok) throw new Error(`Failed to fetch movies home: ${res.statusText}`);
     return await res.json();
   },

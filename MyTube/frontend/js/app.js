@@ -16,7 +16,7 @@ const App = {
   currentWatchData: null,
   upNextSource: 'feed', // 'feed' or 'channel'
   channelSubscriptionFilter: 'all', // 'all', 'subscribed', 'unsubscribed'
-  youtubeUnwatchedOnly: true, // Shared Unwatched / All Videos toggle for Subscriptions, Channel and Gone soon
+  youtubeUnwatchedOnly: true, // Shared Unwatched / All Videos toggle for Subscriptions, Channel, Gone soon and Movies
   searchQuery: '',
 
   // Pagination
@@ -982,15 +982,15 @@ const App = {
     }
   },
 
-  // Shared Unwatched / All Videos toggle for Subscriptions, Channel and Gone soon screens
-  renderUnwatchedToggle(noteHtml = '') {
-    this.filterChips.innerHTML = `
+  // Shared Unwatched / All Videos toggle for Subscriptions, Channel, Gone soon and Movies screens
+  renderUnwatchedToggle(noteHtml = '', container = this.filterChips) {
+    container.innerHTML = `
       ${noteHtml}
       <div class="chip ${this.youtubeUnwatchedOnly ? 'active' : ''}" data-unwatched="true">Unwatched</div>
       <div class="chip ${!this.youtubeUnwatchedOnly ? 'active' : ''}" data-unwatched="false">All Videos</div>
     `;
 
-    this.filterChips.querySelectorAll('.chip[data-unwatched]').forEach((chip) => {
+    container.querySelectorAll('.chip[data-unwatched]').forEach((chip) => {
       chip.addEventListener('click', () => {
         const unwatchedOnly = chip.dataset.unwatched === 'true';
         if (unwatchedOnly === this.youtubeUnwatchedOnly) return;
@@ -1008,6 +1008,8 @@ const App = {
       this.renderChannelFeed();
     } else if (this.currentRoute === '#gone-soon') {
       this.renderGoneSoon();
+    } else if (this.currentRoute === 'movies') {
+      this.renderMoviesHome();
     }
   },
 
@@ -1734,9 +1736,10 @@ const App = {
     const shelvesEl = document.getElementById('movies-shelves');
     if (!heroEl || !shelvesEl) return;
 
+    this.renderUnwatchedToggle('', document.getElementById('movies-filter-chips'));
     this.showLoading(true);
     try {
-      const data = await api.getMoviesHome();
+      const data = await api.getMoviesHome(this.youtubeUnwatchedOnly ? 'unwatched' : 'all');
       this.showLoading(false);
 
       // 1. Featured Hero

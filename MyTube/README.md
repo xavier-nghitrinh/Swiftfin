@@ -25,7 +25,10 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
    - Channel directory with unwatched badges.
    - Channel detail page with filters: `All`, `Unwatched`, `Watched`.
 
-3. **High-Performance Player:**
+3. **Movies Browser:**
+   - Filter chips: `Unwatched` (default) vs `All Videos`, shared with the Subscription Feed. Applies to the hero banner and every shelf; Continue Watching is always unwatched.
+
+4. **High-Performance Player:**
    - **Direct Play from Jellyfin:** Client streams directly from Jellyfin without proxying media bytes through MyTube.
    - **Audio-Only Playback:** Select **Audio only** in the quality menu to stream the selected audio track without video.
    - **Multi-Audio Selector:** Supports multiple audio tracks (e.g. English, Vietnamese).

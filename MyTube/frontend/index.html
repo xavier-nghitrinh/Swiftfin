@@ -302,6 +302,9 @@
 
       <!-- 3. Movies Home View -->
       <div id="movies-view" class="media-library-view" style="display: none;">
+        <div class="section-header">
+          <div class="filter-chips" id="movies-filter-chips"></div>
+        </div>
         <div class="netflix-hero" id="movies-hero"></div>
         <div class="netflix-shelves" id="movies-shelves"></div>
       </div>
@@ -365,9 +368,9 @@
   <script src="/js/hls.min.js"></script>
   <script src="/js/marked.umd.js"></script>
   <script src="/js/purify.min.js"></script>
-  <script src="/js/api.js?v=16"></script>
+  <script src="/js/api.js?v=17"></script>
   <script src="/js/player.js?v=18"></script>
-    <script src="/js/app.js?v=27"></script>
+    <script src="/js/app.js?v=28"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.warn);

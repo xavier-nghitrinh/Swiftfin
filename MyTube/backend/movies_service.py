@@ -24,8 +24,11 @@ class MoviesService:
         return d
 
     @classmethod
-    def get_movies_home(cls, user_id: str) -> Dict[str, Any]:
-        """Fetch Netflix/Prime style homepage payload for Movies, with the user's watch state."""
+    def get_movies_home(cls, user_id: str, filter_type: str = "all") -> Dict[str, Any]:
+        """Fetch Netflix/Prime style homepage payload for Movies, with the user's watch state.
+
+        With filter_type="unwatched", watched movies are left out of every browse shelf and the hero banner.
+        """
         with get_db() as conn:
             cursor = conn.cursor()
             progress = UserService.get_progress_map(cursor, user_id, "movie")
@@ -37,24 +40,26 @@ class MoviesService:
                 ORDER BY title ASC
             """)
             all_movies = [cls._row_to_dict(r, progress.get(r["movie_id"])) for r in cursor.fetchall()]
+            browse_movies = [m for m in all_movies if not m["watched"]] if filter_type == "unwatched" else all_movies
+            browse_ids = {m["movie_id"] for m in browse_movies}
 
             # 2. Continue Watching (in progress for this user, unwatched)
             in_progress = [m for m in all_movies if not m["watched"] and m["playback_position"] > 15]
             in_progress.sort(key=lambda m: progress[m["movie_id"]]["updated_at"], reverse=True)
             continue_watching = in_progress[:15]
 
-            # 3. Recently Added
+            # 3. Recently Added (filtered in Python so the 20 slots are filled after watched movies are removed)
             cursor.execute("""
                 SELECT * FROM movies
                 WHERE file_status = 'available'
                 ORDER BY created_at DESC, release_year DESC
-                LIMIT 20
             """)
             recently_added = [cls._row_to_dict(r, progress.get(r["movie_id"])) for r in cursor.fetchall()]
+            recently_added = [m for m in recently_added if m["movie_id"] in browse_ids][:20]
 
             # 4. Group by genres and pick 5 random genres
             genre_map: Dict[str, List[Dict[str, Any]]] = {}
-            for m in all_movies:
+            for m in browse_movies:
                 for g in m.get("genres", []):
                     if g:
                         genre_map.setdefault(g, []).append(m)
@@ -73,18 +78,18 @@ class MoviesService:
 
             # 5. Featured / Hero movie banner: a random pick on every visit
             featured = None
-            candidates = [m for m in all_movies if m.get("backdrop_url")]
+            candidates = [m for m in browse_movies if m.get("backdrop_url")]
             if candidates:
                 featured = random.choice(candidates)
-            elif all_movies:
-                featured = random.choice(all_movies)
+            elif browse_movies:
+                featured = random.choice(browse_movies)
 
             return {
                 "featured": featured,
                 "continue_watching": continue_watching,
                 "recently_added": recently_added,
                 "genres": genre_shelves,
-                "all_movies": all_movies,
+                "all_movies": browse_movies,
                 "total_movies": len(all_movies)
             }
 

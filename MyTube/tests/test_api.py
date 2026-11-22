@@ -700,5 +700,28 @@ def test_featured_movie_changes_between_home_loads(temp_db):
     assert len(featured_ids) > 1
 
 
+def test_movies_home_unwatched_filter_hides_watched_movies(temp_db):
+    with get_db() as conn:
+        for i in range(3):
+            conn.execute(
+                """INSERT INTO movies (movie_id, title, jellyfin_item_id, backdrop_url, file_status, created_at, updated_at)
+                   VALUES (?, ?, ?, 'backdrop.jpg', 'available', ?, '2024-01-01T00:00:00+00:00')""",
+                (f"movie-{i}", f"Movie {i}", f"jf-{i}", f"2024-01-0{i + 1}T00:00:00+00:00"),
+            )
+        conn.execute(
+            """INSERT INTO user_progress (user_id, media_id, media_type, watched, playback_position, updated_at)
+               VALUES ('user-1', 'movie-0', 'movie', 1, 0, '2024-01-01T00:00:00+00:00')"""
+        )
+        conn.commit()
+
+    everything = MoviesService.get_movies_home("user-1")
+    assert {m["movie_id"] for m in everything["all_movies"]} == {"movie-0", "movie-1", "movie-2"}
+
+    unwatched = MoviesService.get_movies_home("user-1", filter_type="unwatched")
+    assert {m["movie_id"] for m in unwatched["all_movies"]} == {"movie-1", "movie-2"}
+    assert {m["movie_id"] for m in unwatched["recently_added"]} == {"movie-1", "movie-2"}
+    assert unwatched["featured"]["movie_id"] in {"movie-1", "movie-2"}
+
+
 if __name__ == "__main__":
     test_api()

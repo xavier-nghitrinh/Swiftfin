@@ -334,9 +334,12 @@ def delete_video_permanently(video_id: str):
     return CleanupService.delete_permanently(video_id)
 
 @app.get("/api/movies/home")
-def get_movies_home(user: Dict[str, Any] = Depends(get_current_user)):
+def get_movies_home(
+    filter_type: str = Query("all", pattern="^(all|unwatched)$"),
+    user: Dict[str, Any] = Depends(get_current_user),
+):
     """Netflix/Prime style homepage for Movies (continue watching, recently added, 5 random genres)."""
-    return MoviesService.get_movies_home(user["user_id"])
+    return MoviesService.get_movies_home(user["user_id"], filter_type=filter_type)
 
 @app.get("/api/movies/{movie_id}")
 def get_movie_detail(movie_id: str, user: Dict[str, Any] = Depends(get_current_user)):
