@@ -5,7 +5,7 @@ MyTube is a lightweight, self-hosted YouTube system that turns downloaded videos
 ## Architecture
 
 - **Backend:** FastAPI (Python 3.13) + SQLite. Runs locally on Windows PC (`http://localhost:8000`).
-- **Database:** `data/mytube.db` inside the project by default (internal disk on the server). Override with `MYTUBE_DB_PATH`.
+- **Database:** `data/mytube.db` inside the project by default (internal disk on the server). Override with `MYTUBE_DB_PATH`. The database is git-ignored (see [.gitignore](./.gitignore)), so it is never committed.
 - **Media Engine:** Jellyfin server at `http://192.168.1.131:8096`.
 - **Storage:** Local media directory (`/media/devmon/EXTERNAL/yt_video` by default), accessed directly by MyTube and Jellyfin API.
 - **Client:** Modern Progressive Web App (PWA) compatible with Desktop Chrome/Edge/Firefox, Android phones/tablets, and iPhone/iPad.

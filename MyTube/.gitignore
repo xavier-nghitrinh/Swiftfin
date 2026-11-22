@@ -1,0 +1,4 @@
+data/mytube.db
+data/mytube.db-wal
+data/mytube.db-shm
+data/mytube.db-journal
