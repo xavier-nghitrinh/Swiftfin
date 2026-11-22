@@ -123,7 +123,7 @@ def get_gone_soon(
     unplayed_only: bool = Query(True),
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """Subscribed videos oldest first: the ones the automatic space cleanup will delete next."""
+    """Subscribed videos in cleanup order: watched by anyone first, then oldest first. The next ones the automatic space cleanup will delete."""
     return FeedService.get_gone_soon(user["user_id"], limit=limit, offset=offset, unplayed_only=unplayed_only)
 
 @app.get("/api/continue-watching")

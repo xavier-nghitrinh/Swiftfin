@@ -380,6 +380,16 @@ def test_gone_soon_can_include_watched_videos(temp_db):
     everything = client.get("/api/gone-soon?unplayed_only=false", headers=headers).json()["items"]
     assert [item["video_id"] for item in everything] == ["old", "new"]
 
+def test_gone_soon_puts_videos_watched_by_anyone_before_older_unwatched(temp_db):
+    _seed_dated_video("ancient", "alpha", "2020-01-01")
+    _seed_dated_video("watched", "alpha", "2024-06-01")
+    headers = _create_user("Ann")
+    client.put("/api/channels/alpha/subscription", json={"subscribed": True}, headers=headers)
+    client.post("/api/videos/watched/progress", json={"position": 100, "duration": 100}, headers=headers)
+
+    everything = client.get("/api/gone-soon?unplayed_only=false", headers=headers).json()["items"]
+    assert [item["video_id"] for item in everything] == ["watched", "ancient"]
+
 def test_continue_watching_spans_all_channels_and_skips_finished_or_barely_started(temp_db):
     _seed_dated_video("subscribed", "alpha", "2024-01-01")
     _seed_dated_video("other", "beta", "2024-01-02")
@@ -431,6 +441,27 @@ def test_space_cleanup_deletes_oldest_videos_until_under_limit(temp_db, tmp_path
     assert not (media / "old.info.json").exists()
     assert (media / "mid.mp4").exists()
     assert _video_ids() == ["mid", "new"]
+
+def test_space_cleanup_deletes_watched_videos_before_older_unwatched(temp_db, tmp_path, monkeypatch):
+    import backend.cleanup_service as cleanup_service
+
+    media = tmp_path / "media" / "alpha"
+    media.mkdir(parents=True)
+    monkeypatch.setattr(cleanup_service, "REMOTE_MEDIA_DIR", str(tmp_path / "media"))
+    monkeypatch.setattr(cleanup_service, "MAX_MEDIA_GB", 1.5 / 1024)  # 1.5 MiB; 3 MiB on disk
+    monkeypatch.setattr(cleanup_service.jellyfin, "delete_item", lambda item_id: True)
+    monkeypatch.setattr(cleanup_service.jellyfin, "trigger_refresh", lambda: True)
+    for name, date in [("old", "2023-01-01"), ("mid", "2023-06-01"), ("watched", "2024-06-01")]:
+        path = media / f"{name}.mp4"
+        path.write_bytes(b"x" * 1024 * 1024)
+        _seed_dated_video(name, "alpha", date, file_path=str(path))
+    headers = _create_user("Ann")
+    client.post("/api/videos/watched/progress", json={"position": 100, "duration": 100}, headers=headers)
+
+    result = cleanup_service.CleanupService.run_space_cleanup()
+
+    assert result["deleted"] == ["watched", "old"]
+    assert _video_ids() == ["mid"]
 
 def test_local_files_and_rows_survive_when_jellyfin_refuses_delete(temp_db, tmp_path, monkeypatch):
     import backend.cleanup_service as cleanup_service

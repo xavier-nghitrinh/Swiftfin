@@ -49,7 +49,7 @@ For Jellyfin credentials, user/library IDs, and migration steps, see [JELLYFIN_S
    - Delete permanently with one click (`DELETE /api/videos/{id}`).
 
 5. **Gone soon:**
-   - The bin tab (web and tvOS) lists your subscribed YouTube videos oldest first by `upload_date`, loaded in batches as you scroll (`GET /api/gone-soon`). These are the videos the space cleanup removes next.
+   - The bin tab (web and tvOS) lists your subscribed unwatched YouTube videos oldest first by `upload_date`, loaded in batches as you scroll (`GET /api/gone-soon`). These are the next candidates the space cleanup removes after videos watched by someone; turn off the unwatched filter to see watched videos, which the cleanup deletes first.
 
 ---
 

@@ -103,11 +103,11 @@ The generated YouTube extractor options use `web_safari` and `web_embedded`, exp
 
 ## Space-Based Cleanup
 
-After each run, `runner.py` calls MyTube's `POST /api/admin/cleanup`. If the `yt_video` folder is above `MYTUBE_MAX_MEDIA_GB` (default 200 GB), MyTube deletes the oldest YouTube videos by `upload_date` until the folder fits. Videos with no upload date are removed last. Music is not touched.
+After each run, `runner.py` calls MyTube's `POST /api/admin/cleanup`. If the `yt_video` folder is above `MYTUBE_MAX_MEDIA_GB` (default 200 GB), MyTube deletes YouTube videos until the folder fits. Videos watched by any user are deleted first, then unwatched ones. Within each group, the oldest `upload_date` goes first, and videos with no upload date are removed last. Music is not touched.
 
 Each deletion goes through Jellyfin's `DELETE /Items/{id}` first, so Jellyfin removes the item and its generated files. MyTube then removes leftover sidecar files, such as thumbnails, and hard-deletes the `videos` row. If Jellyfin refuses the delete, the files and the row are both kept, so nothing is left orphaned or listed but unplayable. The scan that runs before cleanup drops DB rows for items Jellyfin no longer has. The cleanup call has a 600-second timeout because deletes and folder size checks can be slow on a large library.
 
-The cleanup needs the media folder mounted at `MYTUBE_REMOTE_MEDIA_DIR` on the MyTube host. When that path is missing, cleanup is skipped and logged. The `gone-soon` tab in MyTube lists the videos that will be removed next, so you can watch them first.
+The cleanup needs the media folder mounted at `MYTUBE_REMOTE_MEDIA_DIR` on the MyTube host. When that path is missing, cleanup is skipped and logged. The `gone-soon` tab in MyTube previews the cleanup order, so you can see what will be removed next.
 
 ## Per-Subscription Options
 

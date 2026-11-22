@@ -69,10 +69,10 @@ class FeedService:
 
     @staticmethod
     def get_gone_soon(user_id: str, limit: int = 50, offset: int = 0, unplayed_only: bool = True) -> Dict[str, Any]:
-        """Subscribed available videos, oldest first: the next candidates for automatic space cleanup.
+        """Subscribed available videos in space cleanup order: the next candidates for automatic deletion.
 
-        Ordered by upload_date (the same key the space cleanup uses), then ingest time as a tiebreaker.
-        Videos without an upload_date sort last.
+        Videos watched by any user come first, then unwatched ones. Within each group, oldest upload_date
+        first, then ingest time as a tiebreaker. Videos without an upload_date sort last in their group.
         """
         with get_db() as conn:
             cursor = conn.cursor()
@@ -90,7 +90,10 @@ class FeedService:
                 params,
                 limit,
                 offset,
-                order_sql="(v.upload_date IS NULL), v.upload_date ASC, v.created_at ASC, v.video_id ASC",
+                order_sql="""EXISTS (
+                    SELECT 1 FROM user_progress wp
+                    WHERE wp.media_id = v.video_id AND wp.media_type = 'youtube' AND wp.watched = 1
+                ) DESC, (v.upload_date IS NULL), v.upload_date ASC, v.created_at ASC, v.video_id ASC""",
             )
 
     @staticmethod

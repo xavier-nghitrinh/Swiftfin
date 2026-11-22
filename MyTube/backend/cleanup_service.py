@@ -98,10 +98,11 @@ class CleanupService:
 
     @staticmethod
     def run_space_cleanup() -> Dict[str, Any]:
-        """Delete the oldest available YouTube videos until the media folder fits in MAX_MEDIA_GB.
+        """Delete YouTube videos until the media folder fits in MAX_MEDIA_GB.
 
-        Candidates are ordered by upload_date (oldest first, unknown dates last). Each one goes through
-        delete_permanently, so Jellyfin removes the files and SQLite drops the row.
+        Candidates are ordered with videos watched by any user first, then unwatched ones. Within each
+        group, oldest upload_date first (unknown dates last). Each one goes through delete_permanently,
+        so Jellyfin removes the files and SQLite drops the row.
         """
         limit_bytes = int(MAX_MEDIA_GB * 1024 ** 3)
         root = REMOTE_MEDIA_DIR
@@ -123,11 +124,16 @@ class CleanupService:
 
         with get_db() as conn:
             candidates = conn.execute("""
-                SELECT video_id, title, file_path FROM videos
-                WHERE file_status = 'available'
-                  AND jellyfin_item_id IS NOT NULL AND jellyfin_item_id != ''
-                  AND file_path IS NOT NULL AND file_path != ''
-                ORDER BY (upload_date IS NULL), upload_date ASC, created_at ASC, video_id ASC
+                SELECT v.video_id, v.title, v.file_path FROM videos v
+                WHERE v.file_status = 'available'
+                  AND v.jellyfin_item_id IS NOT NULL AND v.jellyfin_item_id != ''
+                  AND v.file_path IS NOT NULL AND v.file_path != ''
+                ORDER BY
+                  EXISTS (
+                    SELECT 1 FROM user_progress p
+                    WHERE p.media_id = v.video_id AND p.media_type = 'youtube' AND p.watched = 1
+                  ) DESC,
+                  (v.upload_date IS NULL), v.upload_date ASC, v.created_at ASC, v.video_id ASC
             """).fetchall()
 
         logger.info(f"Space cleanup: {used / 1024 ** 3:.1f} GiB used, limit {MAX_MEDIA_GB:g} GiB")
