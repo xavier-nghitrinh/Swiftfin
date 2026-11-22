@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sys
+import time
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ BASE_CONFIG_FILE = APP_DIR / "config.yaml"
 RUNTIME_DIR = APP_DIR / ".runtime"
 RUNTIME_CONFIG_FILE = RUNTIME_DIR / "config.yaml"
 SUBSCRIPTIONS_FILE = RUNTIME_DIR / "subscriptions.yaml"
+# Newer uploads and live starts wait so YouTube can finish extra audio tracks and subtitles.
+MIN_AGE_BEFORE_DOWNLOAD_SECONDS = 3600
 
 
 def get_storage_dir(settings: dict[str, Any]) -> Path:
@@ -229,8 +232,11 @@ def build_runtime_files(storage_dir: Path, history_dir: Path, channels: list[dic
                 filters.append(f"title ~= (?i){phrases[0]}")
             elif len(phrases) > 1:
                 filters.append(f"title ~= (?i)({'|'.join(phrases)})")
-        if filters:
-            preset["match_filters"] = {"filters": [" & ".join(filters)]}
+        # "<=?" passes when the field is missing, so uploads without a timestamp keep the old behavior.
+        age_cutoff = int(time.time()) - MIN_AGE_BEFORE_DOWNLOAD_SECONDS
+        filters.append(f"timestamp <=? {age_cutoff}")
+        filters.append(f"release_timestamp <=? {age_cutoff}")
+        preset["match_filters"] = {"filters": [" & ".join(filters)]}
         voice_langs = parse_language_list(channel.get("voice_language"))
         sub_langs = parse_language_list(channel.get("subtitle_language"))
 
