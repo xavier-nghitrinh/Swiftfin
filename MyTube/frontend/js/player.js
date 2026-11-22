@@ -52,6 +52,7 @@ const Player = {
   selectedSubIndex: -1,
   currentSubMeta: null,
   subtitleCues: [],
+  subtitleOffset: 0,
   basePlaybackRate: 1.0,
   isHoldingSpeed: false,
   justFinishedHold: false,
@@ -417,6 +418,12 @@ const Player = {
 
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.dropdown-menu') && !e.target.closest('.btn-icon')) {
+        this.closeAllDropdowns();
+      }
+    });
+
+    document.addEventListener('pointerdown', (e) => {
+      if (this.hasOpenDropdown() && !e.target.closest('.dropdown-menu') && !e.target.closest('.btn-icon')) {
         this.closeAllDropdowns();
       }
     });
@@ -1083,30 +1090,78 @@ const Player = {
   buildSubMenu(subtitles) {
     this.subMenu.innerHTML = '';
     this.clearSubtitles();
+    this.subtitleOffset = 0;
+
+    const hasSubtitles = Boolean(subtitles && subtitles.length > 0);
+
+    // Shift / Timing controls section
+    const shiftContainer = document.createElement('div');
+    shiftContainer.className = 'sub-shift-container';
+    shiftContainer.innerHTML = `
+      <div class="sub-shift-header">
+        <span class="sub-shift-title">Subtitle Timing</span>
+        <span class="sub-shift-value">0.0s</span>
+      </div>
+      <div class="sub-shift-actions">
+        <button type="button" class="sub-shift-btn" id="sub-shift-minus" title="Shift subtitles earlier (-0.5s)">-0.5s</button>
+        <button type="button" class="sub-shift-btn sub-shift-reset disabled" id="sub-shift-reset" title="Reset shift to 0.0s" disabled>Reset</button>
+        <button type="button" class="sub-shift-btn" id="sub-shift-plus" title="Shift subtitles later (+0.5s)">+0.5s</button>
+      </div>
+    `;
+
+    shiftContainer.addEventListener('click', (e) => e.stopPropagation());
+
+    const minusBtn = shiftContainer.querySelector('#sub-shift-minus');
+    const plusBtn = shiftContainer.querySelector('#sub-shift-plus');
+    const resetBtn = shiftContainer.querySelector('#sub-shift-reset');
+
+    minusBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.adjustSubtitleOffset(-0.5);
+    });
+    plusBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.adjustSubtitleOffset(0.5);
+    });
+    resetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.setSubtitleOffset(0);
+    });
+
+    this.subMenu.appendChild(shiftContainer);
+
+    const divider = document.createElement('div');
+    divider.className = 'dropdown-divider';
+    this.subMenu.appendChild(divider);
+
+    const tracksContainer = document.createElement('div');
+    tracksContainer.className = 'sub-tracks-list';
 
     const offItem = document.createElement('div');
     offItem.className = 'menu-item selected';
+    offItem.dataset.subIndex = '-1';
     offItem.textContent = 'Subtitles: Off';
     offItem.addEventListener('click', (e) => {
       e.stopPropagation();
       this.switchSubtitle(-1);
-      this.closeAllDropdowns();
     });
-    this.subMenu.appendChild(offItem);
+    tracksContainer.appendChild(offItem);
 
-    if (!subtitles || subtitles.length === 0) return;
-
-    subtitles.forEach((sub) => {
-      const item = document.createElement('div');
-      item.className = 'menu-item';
-      item.textContent = sub.title || sub.language.toUpperCase();
-      item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.switchSubtitle(sub.index, sub.url, sub.language, sub.title);
-        this.closeAllDropdowns();
+    if (hasSubtitles) {
+      subtitles.forEach((sub) => {
+        const item = document.createElement('div');
+        item.className = 'menu-item';
+        item.dataset.subIndex = String(sub.index);
+        item.textContent = sub.title || sub.language.toUpperCase();
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.switchSubtitle(sub.index, sub.url, sub.language, sub.title);
+        });
+        tracksContainer.appendChild(item);
       });
-      this.subMenu.appendChild(item);
-    });
+    }
+
+    this.subMenu.appendChild(tracksContainer);
   },
 
   removeNativeTracks() {
@@ -1149,14 +1204,9 @@ const Player = {
     this.clearSubtitles();
     this.selectedSubIndex = index;
 
-    const items = this.subMenu.querySelectorAll('.menu-item');
-    items.forEach((item, i) => {
-      if (index === -1) {
-        item.classList.toggle('selected', i === 0);
-      } else {
-        const sub = this.playbackData?.subtitles[i - 1];
-        item.classList.toggle('selected', sub && sub.index === index);
-      }
+    this.subMenu.querySelectorAll('.menu-item[data-sub-index]').forEach((item) => {
+      const subIdx = parseInt(item.dataset.subIndex, 10);
+      item.classList.toggle('selected', subIdx === Number(index));
     });
 
     if (index < 0 || !url) return;
@@ -1220,6 +1270,39 @@ const Player = {
     return NaN;
   },
 
+  adjustSubtitleOffset(delta) {
+    this.subtitleOffset = Math.round(((this.subtitleOffset || 0) + delta) * 10) / 10;
+    this.updateSubtitleOffsetDisplay();
+    this.renderActiveSubtitleCue();
+  },
+
+  setSubtitleOffset(val = 0) {
+    this.subtitleOffset = Math.round(val * 10) / 10;
+    this.updateSubtitleOffsetDisplay();
+    this.renderActiveSubtitleCue();
+  },
+
+  formatSubtitleOffset(offset) {
+    const val = offset || 0;
+    if (val > 0) return `+${val.toFixed(1)}s`;
+    if (val < 0) return `${val.toFixed(1)}s`;
+    return '0.0s';
+  },
+
+  updateSubtitleOffsetDisplay() {
+    if (!this.subMenu) return;
+    const valEl = this.subMenu.querySelector('.sub-shift-value');
+    if (valEl) {
+      valEl.textContent = this.formatSubtitleOffset(this.subtitleOffset);
+    }
+    const resetBtn = this.subMenu.querySelector('.sub-shift-reset');
+    if (resetBtn) {
+      const isZero = (this.subtitleOffset || 0) === 0;
+      resetBtn.disabled = isZero;
+      resetBtn.classList.toggle('disabled', isZero);
+    }
+  },
+
   renderActiveSubtitleCue() {
     if (!this.subtitleOverlay || this.selectedSubIndex < 0 || this.subtitleCues.length === 0) {
       if (this.subtitleOverlay) this.subtitleOverlay.style.display = 'none';
@@ -1227,12 +1310,13 @@ const Player = {
     }
 
     const now = this.getCurrentTime();
+    const adjustedTime = now - (this.subtitleOffset || 0);
     let activeText = '';
     for (let i = 0; i < this.subtitleCues.length; i++) {
       const c = this.subtitleCues[i];
-      if (now >= c.start && now <= c.end) {
+      if (adjustedTime >= c.start && adjustedTime <= c.end) {
         activeText = c.text;
-      } else if (c.start > now) {
+      } else if (c.start > adjustedTime) {
         break;
       }
     }
@@ -1389,7 +1473,7 @@ const Player = {
       const playerRect = this.container.getBoundingClientRect();
       const belowPlayerTop = playerRect.bottom + 8;
       const maxHeight = Math.min(
-        240,
+        320,
         Math.max(100, viewportHeight - (narrowScreen ? belowPlayerTop : 16) - 8)
       );
       menu.style.maxHeight = `${maxHeight}px`;
@@ -1617,6 +1701,7 @@ const Player = {
     }
     this.destroyHls();
     this.clearSubtitles();
+    this.subtitleOffset = 0;
     this.video.pause();
     this.video.removeAttribute('src');
     this.video.load();
