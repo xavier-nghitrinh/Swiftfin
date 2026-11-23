@@ -63,6 +63,12 @@ class UserService:
                 return False
             cursor.execute("DELETE FROM user_progress WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM user_subscriptions WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM user_music WHERE user_id = ?", (user_id,))
+            cursor.execute(
+                "DELETE FROM music_playlist_items WHERE playlist_id IN (SELECT playlist_id FROM music_playlists WHERE user_id = ?)",
+                (user_id,),
+            )
+            cursor.execute("DELETE FROM music_playlists WHERE user_id = ?", (user_id,))
             cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
             conn.commit()
         return True

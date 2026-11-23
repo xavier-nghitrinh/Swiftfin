@@ -32,6 +32,7 @@ class JellyfinClient:
         self.library_id = library_id
         self.movies_library_id = movies_library_id
         self.shows_library_id = shows_library_id
+        self._music_library_id: Optional[str] = None
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f'MediaBrowser Token="{self.api_key}"',
@@ -125,6 +126,32 @@ class JellyfinClient:
             "Fields": "Path,Overview,PremiereDate,ProductionYear,DateCreated,MediaSources,MediaStreams,UserData,RunTimeTicks,SeasonId,SeasonName,SeriesId,SeriesName,IndexNumber,ParentIndexNumber,ImageTags",
         }
         return self._get_all_items(params, timeout=25)
+
+    def find_music_library_id(self) -> Optional[str]:
+        """Return the ID of the Jellyfin library whose CollectionType is 'music'. Cached once found."""
+        if self._music_library_id:
+            return self._music_library_id
+        resp = self.session.get(f"{self.base_url}/Library/VirtualFolders", timeout=10)
+        resp.raise_for_status()
+        for folder in resp.json():
+            if (folder.get("CollectionType") or "").lower() == "music" and folder.get("ItemId"):
+                self._music_library_id = folder["ItemId"]
+                break
+        return self._music_library_id
+
+    def get_music_items(self) -> Optional[List[Dict[str, Any]]]:
+        """Fetch all audio tracks from the Music library. Returns None when no music library exists."""
+        music_library_id = self.find_music_library_id()
+        if not music_library_id:
+            logger.warning("No Jellyfin library with CollectionType 'music' was found.")
+            return None
+        params = {
+            "ParentId": music_library_id,
+            "Recursive": "true",
+            "IncludeItemTypes": "Audio",
+            "Fields": "AlbumId,AlbumArtists,Artists,ProductionYear,RunTimeTicks,IndexNumber",
+        }
+        return self._get_all_items(params, timeout=30)
 
     def get_item_details(self, item_id: str) -> Dict[str, Any]:
         url = f"{self.base_url}/Users/{self.user_id}/Items/{item_id}"

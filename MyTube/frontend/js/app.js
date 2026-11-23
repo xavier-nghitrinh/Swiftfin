@@ -18,6 +18,8 @@ const App = {
   channelSubscriptionFilter: 'all', // 'all', 'subscribed', 'unsubscribed'
   youtubeUnwatchedOnly: true, // Shared Unwatched / All Videos toggle for Subscriptions, Channel, Gone soon and Movies
   searchQuery: '',
+  musicRenderToken: 0, // Guards against stale async music renders
+  musicSearchToken: 0,
 
   // Pagination
   feedOffset: 0,
@@ -38,6 +40,8 @@ const App = {
   movieDetailsView: null,
   showsView: null,
   showDetailsView: null,
+  musicView: null,
+  musicContent: null,
   headerBackBtn: null,
   videoGrid: null,
   continueWatchingShelf: null,
@@ -77,6 +81,8 @@ const App = {
     this.movieDetailsView = document.getElementById('movie-details-view');
     this.showsView = document.getElementById('shows-view');
     this.showDetailsView = document.getElementById('show-details-view');
+    this.musicView = document.getElementById('music-view');
+    this.musicContent = document.getElementById('music-content');
     this.headerBackBtn = document.getElementById('header-back-btn');
     this.videoGrid = document.getElementById('video-grid');
     this.continueWatchingShelf = document.getElementById('feed-continue-watching');
@@ -104,11 +110,13 @@ const App = {
     this.toastEl = document.getElementById('toast-notification');
 
     Player.init();
+    MusicPlayer.init();
     this.bindEvents();
     this.setupSwipeNavigation();
 
     window.addEventListener('hashchange', () => this.handleRoute());
     window.addEventListener('mytube:user-invalid', () => this.returnToUserSelection());
+    window.addEventListener('mytube:music-changed', (e) => this.onMusicChanged(e.detail));
     window.addEventListener('mytube:subtitle-changed', (e) => this.onWatchSubtitleChanged(e.detail));
     document.getElementById('watch-ai-btn').addEventListener('click', () => this.generateWatchAi());
     // Links in the AI note open in a new tab so the app stays open
@@ -361,6 +369,7 @@ const App = {
 
   resetSessionState() {
     if (Player.isActive) Player.stop();
+    MusicPlayer.stop();
     this.hidePopover();
     this.routeHistory = [];
     this.currentWatchData = null;
@@ -533,7 +542,7 @@ const App = {
     }
 
     // Show header back button when not on root hubs
-    const isRoot = (hash === '#home' || hash === '#movies' || hash === '#shows');
+    const isRoot = (hash === '#home' || hash === '#movies' || hash === '#shows' || hash === '#music');
     this.headerBackBtn.style.display = !isRoot ? 'flex' : 'none';
 
     // Stop player if leaving #watch/
@@ -549,11 +558,14 @@ const App = {
       if (this.movieDetailsView) this.movieDetailsView.style.display = 'none';
       if (this.showsView) this.showsView.style.display = 'none';
       if (this.showDetailsView) this.showDetailsView.style.display = 'none';
+      if (this.musicView) this.musicView.style.display = 'none';
     };
 
     // 1. Watch View
     if (hash.startsWith('#watch/')) {
       hideAllViews();
+      MusicPlayer.pause();
+      MusicPlayer.closeNow();
       this.currentRoute = hash;
       const videoId = decodeURIComponent(hash.slice('#watch/'.length));
       this.watchView.style.display = 'grid';
@@ -611,6 +623,17 @@ const App = {
       return;
     }
 
+    // 7. Music Views (Home, Songs, Artists, Collections, Favorites, Playlists, Search)
+    if (hash === '#music' || hash.startsWith('#music/')) {
+      hideAllViews();
+      this.currentRoute = hash;
+      this.setActiveNav('nav-music');
+      if (this.musicView) this.musicView.style.display = 'block';
+      window.scrollTo(0, 0);
+      this.renderMusicRoute(hash);
+      return;
+    }
+
     // 6. YouTube Browse Views (Home, Channels, Channel, Search); always reloaded on entry
     hideAllViews();
     this.browseView.style.display = 'block';
@@ -648,6 +671,411 @@ const App = {
       this.setActiveNav('nav-home');
       this.renderHomeFeed();
     }
+  },
+
+  // =========================================================
+  // Music Views
+  // =========================================================
+  renderMusicRoute(hash) {
+    const parts = hash.slice('#music'.length).split('/').filter(Boolean);
+    const section = parts[0] || 'home';
+    const param = parts.length > 1 ? decodeURIComponent(parts.slice(1).join('/')) : '';
+    const tabForSection = { artist: 'artists', collection: 'collections', playlist: 'playlists' };
+    this.setMusicTabs(tabForSection[section] || section);
+
+    const token = ++this.musicRenderToken;
+    this.musicContent.replaceChildren(this.musicMessage('Loading...'));
+    this.buildMusicView(section, param)
+      .then((nodes) => {
+        if (token === this.musicRenderToken) this.musicContent.replaceChildren(...nodes);
+      })
+      .catch((err) => {
+        if (token === this.musicRenderToken) {
+          this.musicContent.replaceChildren(this.musicMessage(`Failed to load music: ${err.message}`));
+        }
+      });
+  },
+
+  setMusicTabs(active) {
+    document.querySelectorAll('#music-tabs [data-music-tab]').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.musicTab === active);
+    });
+  },
+
+  countLabel(count, noun) {
+    return `${count} ${noun}${count === 1 ? '' : 's'}`;
+  },
+
+  async buildMusicView(section, param) {
+    switch (section) {
+      case 'songs': {
+        const { tracks } = await api.getMusicTracks();
+        return this.musicTrackView(tracks, { title: 'Songs',         subtitle: this.countLabel(tracks.length, 'song'), emptyText: 'No songs found' });
+      }
+      case 'artists': {
+        const { artists } = await api.getMusicArtists();
+        const cards = artists.map((artist) => this.musicCard({
+          image: artist.image_url,
+          title: artist.name,
+          subtitle: this.countLabel(artist.track_count, 'song'),
+          round: true,
+          onClick: () => { window.location.hash = `#music/artist/${encodeURIComponent(artist.name)}`; }
+        }));
+        return [
+          this.musicPageHeader('Artists', this.countLabel(artists.length, 'artist')),
+          cards.length ? this.musicGrid(cards) : this.musicMessage('No artists found')
+        ];
+      }
+      case 'artist': {
+        const { artist, tracks } = await api.getMusicArtist(param);
+        return this.musicTrackView(tracks, { title: artist.name, subtitle: this.countLabel(tracks.length, 'song'), emptyText: 'No songs found' });
+      }
+      case 'collections': {
+        const { collections } = await api.getMusicCollections();
+        const cards = collections.map((collection) => this.musicCard({
+          image: collection.image_url,
+          title: collection.name,
+          subtitle: this.countLabel(collection.track_count, 'song'),
+          onClick: () => { window.location.hash = `#music/collection/${encodeURIComponent(collection.name)}`; }
+        }));
+        return [
+          this.musicPageHeader('Collections', 'Grouped by the source playlist in Jellyfin'),
+          cards.length ? this.musicGrid(cards) : this.musicMessage('No collections found')
+        ];
+      }
+      case 'collection': {
+        const { collection, tracks } = await api.getMusicCollection(param);
+        return this.musicTrackView(tracks, { title: collection.name,         subtitle: this.countLabel(tracks.length, 'song'), emptyText: 'No songs found' });
+      }
+      case 'favorites': {
+        const { tracks } = await api.getMusicFavorites();
+        return this.musicTrackView(tracks, {
+          title: 'Favorites',
+          subtitle:           this.countLabel(tracks.length, 'song'),
+          emptyText: 'No favorites yet. Tap the heart on a song to save it here.'
+        });
+      }
+      case 'playlists': {
+        const { playlists } = await api.getMusicPlaylists();
+        const form = this.musicEl('form', 'music-playlist-form');
+        form.autocomplete = 'off';
+        const input = this.musicEl('input', 'music-playlist-input');
+        input.type = 'text';
+        input.maxLength = 80;
+        input.placeholder = 'New playlist name';
+        input.required = true;
+        const submit = this.musicEl('button', 'chip active', 'Create');
+        submit.type = 'submit';
+        form.append(input, submit);
+        form.addEventListener('submit', (event) => this.createMusicPlaylistFromForm(event, input));
+
+        const cards = playlists.map((playlist) => this.musicCard({
+          title: playlist.name,
+          subtitle: this.countLabel(playlist.track_count, 'song'),
+          onClick: () => { window.location.hash = `#music/playlist/${encodeURIComponent(playlist.playlist_id)}`; }
+        }));
+        return [
+          this.musicPageHeader('Playlists', this.countLabel(playlists.length, 'playlist')),
+          form,
+          cards.length ? this.musicGrid(cards) : this.musicMessage('No playlists yet')
+        ];
+      }
+      case 'playlist': {
+        const playlist = await api.getMusicPlaylist(param);
+        return this.musicTrackView(playlist.tracks, {
+          title: playlist.name,
+          subtitle:           this.countLabel(playlist.track_count, 'song'),
+          emptyText: 'This playlist is empty. Use the more menu on a song to add it here.',
+          actions: [
+            { label: 'Rename', onClick: () => this.renameMusicPlaylist(playlist) },
+            { label: 'Delete', onClick: () => this.deleteMusicPlaylist(playlist) }
+          ],
+          onRemove: async (track) => {
+            await api.removeMusicPlaylistItem(playlist.playlist_id, track.item_id);
+            this.renderMusicRoute(window.location.hash);
+          }
+        });
+      }
+      case 'search': {
+        const input = this.musicEl('input', 'music-search-input');
+        input.type = 'search';
+        input.placeholder = 'Search songs';
+        input.maxLength = 100;
+        input.autocomplete = 'off';
+        const results = this.musicEl('div', 'music-search-results');
+        results.append(this.musicMessage('Type to search your songs'));
+        let timer = null;
+        input.addEventListener('input', () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => this.runMusicSearch(input.value, results), 250);
+        });
+        return [input, results];
+      }
+      default:
+        return this.buildMusicHome();
+    }
+  },
+
+  async buildMusicHome() {
+    const data = await api.getMusicHome();
+    const cardsFor = (items, toCard) => (items || []).map(toCard);
+    const artistCards = cardsFor(data.random_artists, (artist) => this.musicCard({
+      image: artist.image_url,
+      title: artist.name,
+      subtitle: this.countLabel(artist.track_count, 'song'),
+      round: true,
+      onClick: () => { window.location.hash = `#music/artist/${encodeURIComponent(artist.name)}`; }
+    }));
+    const collectionCards = cardsFor(data.random_collections, (collection) => this.musicCard({
+      image: collection.image_url,
+      title: collection.name,
+      subtitle: this.countLabel(collection.track_count, 'song'),
+      onClick: () => { window.location.hash = `#music/collection/${encodeURIComponent(collection.name)}`; }
+    }));
+    const playlistCards = cardsFor(data.playlists, (playlist) => this.musicCard({
+      title: playlist.name,
+      subtitle: this.countLabel(playlist.track_count, 'song'),
+      onClick: () => { window.location.hash = `#music/playlist/${encodeURIComponent(playlist.playlist_id)}`; }
+    }));
+
+    const shelves = [
+      this.musicTrackShelf('Random picks', data.random_tracks),
+      this.musicTrackShelf('Favorites', data.favorites),
+      this.musicTrackShelf('Recently played', data.recently_played),
+      this.musicTrackShelf('Long time no listen', data.forgotten),
+      this.musicCardShelf('Artists', artistCards),
+      this.musicCardShelf('Collections', collectionCards),
+      this.musicCardShelf('Playlists', playlistCards)
+    ].filter(Boolean);
+
+    const nodes = [this.musicPageHeader('Music', `${this.countLabel(data.total_tracks || 0, 'song')} in your library`)];
+    if (!shelves.length) {
+      nodes.push(this.musicMessage('No music yet. Sync the library to load your Jellyfin Music.'));
+    } else {
+      nodes.push(this.musicEl('div', 'music-shelves'));
+      nodes[nodes.length - 1].append(...shelves);
+    }
+    return nodes;
+  },
+
+  musicEl(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined) el.textContent = text;
+    return el;
+  },
+
+  musicMessage(text) {
+    return this.musicEl('div', 'music-empty', text);
+  },
+
+  musicPageHeader(title, subtitle = '', actions = []) {
+    const header = this.musicEl('div', 'music-page-header');
+    const heading = this.musicEl('div', 'music-page-heading');
+    heading.append(this.musicEl('h2', 'music-page-title', title));
+    if (subtitle) heading.append(this.musicEl('div', 'music-page-subtitle', subtitle));
+    header.append(heading);
+    if (actions.length) header.append(this.musicActions(actions));
+    return header;
+  },
+
+  musicActions(actions) {
+    const wrap = this.musicEl('div', 'music-actions');
+    actions.forEach(({ label, onClick }) => {
+      const btn = this.musicEl('button', 'chip', label);
+      btn.type = 'button';
+      btn.addEventListener('click', onClick);
+      wrap.append(btn);
+    });
+    return wrap;
+  },
+
+  musicPlayActions(tracks) {
+    return [
+      { label: 'Play', onClick: () => MusicPlayer.playList(tracks, 0) },
+      { label: 'Shuffle', onClick: () => MusicPlayer.playList(tracks, 0, { shuffle: true }) }
+    ];
+  },
+
+  musicTrackView(tracks, { title, subtitle = '', emptyText, actions = [], onRemove = null }) {
+    const nodes = [this.musicPageHeader(title, subtitle, actions)];
+    if (!tracks || !tracks.length) {
+      nodes.push(this.musicMessage(emptyText));
+      return nodes;
+    }
+    nodes.push(this.musicActions(this.musicPlayActions(tracks)), this.musicTrackRows(tracks, onRemove));
+    return nodes;
+  },
+
+  musicTrackRows(tracks, onRemove = null) {
+    const list = this.musicEl('div', 'music-track-list');
+    tracks.forEach((track, i) => list.append(this.musicTrackRow(track, tracks, i, onRemove)));
+    return list;
+  },
+
+  musicTrackRow(track, tracks, index, onRemove) {
+    const row = this.musicEl('div', 'music-row');
+
+    const art = this.musicEl('img', 'music-art music-row-art');
+    art.alt = '';
+    art.loading = 'lazy';
+    if (track.image_url) art.src = track.image_url;
+
+    const info = this.musicEl('button', 'music-row-info');
+    info.type = 'button';
+    info.append(
+      this.musicEl('div', 'music-row-title', track.title),
+      this.musicEl('div', 'music-row-sub', [track.artist, track.source_group].filter(Boolean).join(' · '))
+    );
+    info.addEventListener('click', () => MusicPlayer.playList(tracks, index));
+
+    const duration = this.musicEl('div', 'music-row-duration', MusicPlayer.formatTime(track.duration));
+
+    const fav = this.musicIconButton('Favorite', this.musicIcons.heart, `music-favorite-btn music-row-fav${track.favorite ? ' active' : ''}`);
+    fav.dataset.trackId = track.track_id;
+    fav.setAttribute('aria-pressed', String(!!track.favorite));
+    fav.addEventListener('click', () => MusicPlayer.toggleFavorite(track));
+
+    const more = this.musicIconButton('More options', this.musicIcons.more);
+    more.addEventListener('click', () => MusicPlayer.openPicker(track));
+
+    row.append(art, info, duration, fav, more);
+
+    if (onRemove) {
+      const remove = this.musicIconButton('Remove from playlist', this.musicIcons.close);
+      remove.addEventListener('click', async () => {
+        try {
+          await onRemove(track);
+        } catch (err) {
+          this.showToast(err.message);
+        }
+      });
+      row.append(remove);
+    }
+    return row;
+  },
+
+  musicIcons: {
+    heart: '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>',
+    more: '<path fill="currentColor" d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>',
+    close: '<path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>'
+  },
+
+  musicIconButton(label, svgInner, className = '') {
+    const btn = this.musicEl('button', `music-icon-btn ${className}`.trim());
+    btn.type = 'button';
+    btn.setAttribute('aria-label', label);
+    btn.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${svgInner}</svg>`;
+    return btn;
+  },
+
+  musicCard({ image, title, subtitle = '', round = false, onClick }) {
+    const card = this.musicEl('button', 'music-card');
+    card.type = 'button';
+    const art = this.musicEl('img', round ? 'music-card-art round' : 'music-card-art');
+    art.alt = '';
+    art.loading = 'lazy';
+    if (image) art.src = image;
+    card.append(art, this.musicEl('div', 'music-card-title', title), this.musicEl('div', 'music-card-sub', subtitle));
+    card.addEventListener('click', onClick);
+    return card;
+  },
+
+  musicGrid(cards) {
+    const grid = this.musicEl('div', 'music-grid');
+    grid.append(...cards);
+    return grid;
+  },
+
+  musicShelf(title, body, actions = []) {
+    const shelf = this.musicEl('section', 'music-shelf');
+    const header = this.musicEl('div', 'music-shelf-header');
+    header.append(this.musicEl('h3', 'music-shelf-title', title));
+    if (actions.length) header.append(this.musicActions(actions));
+    shelf.append(header, body);
+    return shelf;
+  },
+
+  musicTrackShelf(title, tracks) {
+    if (!tracks || !tracks.length) return null;
+    const track = this.musicEl('div', 'music-shelf-track');
+    tracks.forEach((item, i) => track.append(this.musicCard({
+      image: item.image_url,
+      title: item.title,
+      subtitle: item.artist || '',
+      onClick: () => MusicPlayer.playList(tracks, i)
+    })));
+    return this.musicShelf(title, track, this.musicPlayActions(tracks));
+  },
+
+  musicCardShelf(title, cards) {
+    if (!cards.length) return null;
+    const track = this.musicEl('div', 'music-shelf-track');
+    track.append(...cards);
+    return this.musicShelf(title, track);
+  },
+
+  async runMusicSearch(query, container) {
+    const q = query.trim();
+    const token = ++this.musicSearchToken;
+    if (!q) {
+      container.replaceChildren(this.musicMessage('Type to search your songs'));
+      return;
+    }
+    try {
+      const { tracks } = await api.getMusicTracks(q);
+      if (token !== this.musicSearchToken) return;
+      container.replaceChildren(tracks.length ? this.musicTrackRows(tracks) : this.musicMessage('No songs match your search'));
+    } catch (err) {
+      if (token !== this.musicSearchToken) return;
+      container.replaceChildren(this.musicMessage(`Search failed: ${err.message}`));
+    }
+  },
+
+  async createMusicPlaylistFromForm(event, input) {
+    event.preventDefault();
+    const name = input.value.trim();
+    if (!name) return;
+    try {
+      const playlist = await api.createMusicPlaylist(name);
+      window.location.hash = `#music/playlist/${encodeURIComponent(playlist.playlist_id)}`;
+    } catch (err) {
+      this.showToast(err.message);
+    }
+  },
+
+  async renameMusicPlaylist(playlist) {
+    const name = window.prompt('Playlist name', playlist.name);
+    if (name === null || !name.trim()) return;
+    try {
+      await api.renameMusicPlaylist(playlist.playlist_id, name.trim());
+      this.renderMusicRoute(window.location.hash);
+    } catch (err) {
+      this.showToast(err.message);
+    }
+  },
+
+  async deleteMusicPlaylist(playlist) {
+    if (!window.confirm(`Delete playlist "${playlist.name}"?`)) return;
+    try {
+      await api.deleteMusicPlaylist(playlist.playlist_id);
+      window.location.hash = '#music/playlists';
+    } catch (err) {
+      this.showToast(err.message);
+    }
+  },
+
+  onMusicChanged({ trackId, favorite }) {
+    const onFavorites = window.location.hash === '#music/favorites';
+    document.querySelectorAll('.music-row-fav').forEach((btn) => {
+      if (btn.dataset.trackId !== trackId) return;
+      if (!favorite && onFavorites) {
+        btn.closest('.music-row').remove();
+        return;
+      }
+      btn.classList.toggle('active', favorite);
+      btn.setAttribute('aria-pressed', String(favorite));
+    });
   },
 
   // =========================================================

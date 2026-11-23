@@ -397,9 +397,10 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
         f"{len(processed_channels)} channels ({synced_channels} new), {cached_thumbs} Base64 thumbnails cached."
     )
 
-    # Sync Movies and Shows libraries
+    # Sync Movies, Shows, and Music libraries
     movie_stats = sync_movies()
     show_stats = sync_shows_and_episodes()
+    music_stats = sync_music()
 
     return {
         "synced_videos": synced_videos,
@@ -411,6 +412,7 @@ def scan_and_sync(force_full: bool = False) -> Dict[str, Any]:
         "cached_thumbnails": cached_thumbs,
         **movie_stats,
         **show_stats,
+        **music_stats,
     }
 
 
@@ -524,6 +526,92 @@ def sync_movies() -> Dict[str, Any]:
         "new_movies": new_count,
         "removed_movies": removed,
         "cached_movie_thumbs": cached_thumbs
+    }
+
+
+_MUSIC_NOISE_RE = re.compile(
+    r"\s*[\(\[][^\)\]]*(official|music video|lyric|audio|visuali[sz]er|\bHD\b|\b4K\b)[^\)\]]*[\)\]]",
+    re.IGNORECASE,
+)
+
+
+def parse_music_title(name: str) -> Tuple[str, str]:
+    """Split a track name like 'Artist - Title (Official Video)' into (artist, title)."""
+    cleaned = _MUSIC_NOISE_RE.sub("", name or "").strip()
+    if " - " in cleaned:
+        artist, title = cleaned.split(" - ", 1)
+        return artist.strip() or "Unknown Artist", title.strip() or cleaned
+    return "Unknown Artist", cleaned or "Untitled Track"
+
+
+def _first_artist_name(entries: Any) -> str:
+    if isinstance(entries, list) and entries and isinstance(entries[0], dict):
+        return entries[0].get("Name") or ""
+    return ""
+
+
+def sync_music() -> Dict[str, Any]:
+    """Sync the Jellyfin Music library into music_tracks. Tracks missing from Jellyfin are removed with their user data."""
+    logger.info("Scanning Music library from Jellyfin...")
+    try:
+        items = jellyfin.get_music_items()
+    except Exception as e:
+        logger.error(f"Failed to fetch music from Jellyfin: {e}")
+        return {"synced_music": 0, "new_music": 0, "removed_music": 0}
+    if items is None:
+        return {"synced_music": 0, "new_music": 0, "removed_music": 0}
+
+    logger.info(f"Fetched {len(items)} tracks from Jellyfin Music library.")
+    now = now_iso()
+    new_count = 0
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT track_id FROM music_tracks")
+        existing_ids = {row["track_id"] for row in cursor.fetchall()}
+
+        for item in items:
+            track_id = item["Id"]
+            artist, title = parse_music_title(item.get("Name") or "")
+            source_group = _first_artist_name(item.get("AlbumArtists")) or _first_artist_name(item.get("Artists"))
+            image_item_id = item.get("AlbumId") or track_id
+            duration = round((item.get("RunTimeTicks") or 0) / 10000000.0, 2)
+            release_year = item.get("ProductionYear")
+            if track_id not in existing_ids:
+                new_count += 1
+
+            cursor.execute("""
+                INSERT INTO music_tracks (
+                    track_id, title, artist, source_group, image_item_id,
+                    duration, release_year, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(track_id) DO UPDATE SET
+                    title = excluded.title,
+                    artist = excluded.artist,
+                    source_group = excluded.source_group,
+                    image_item_id = excluded.image_item_id,
+                    duration = excluded.duration,
+                    release_year = excluded.release_year,
+                    updated_at = excluded.updated_at
+            """, (track_id, title, artist, source_group, image_item_id, duration, release_year, now, now))
+
+        removed = 0
+        present_ids = {item["Id"] for item in items}
+        # An empty fetch is ignored so a misconfigured library cannot wipe the music tables
+        if present_ids:
+            stale = existing_ids - present_ids
+            for track_id in stale:
+                cursor.execute("DELETE FROM user_music WHERE track_id = ?", (track_id,))
+                cursor.execute("DELETE FROM music_playlist_items WHERE track_id = ?", (track_id,))
+                cursor.execute("DELETE FROM music_tracks WHERE track_id = ?", (track_id,))
+            removed = len(stale)
+        conn.commit()
+
+    logger.info(f"Music scan complete: {len(items)} synced ({new_count} new, {removed} removed).")
+    return {
+        "synced_music": len(items),
+        "new_music": new_count,
+        "removed_music": removed,
     }
 
 

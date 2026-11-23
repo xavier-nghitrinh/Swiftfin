@@ -12,7 +12,7 @@
   <meta name="description" content="Personal YouTube Subscription Feed & Streaming Engine">
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/style.css?v=21">
+  <link rel="stylesheet" href="/css/style.css?v=23">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ff0000'><path d='M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z'/></svg>">
 </head>
 <body>
@@ -55,24 +55,28 @@
   <div class="app-container" id="app-container">
     <!-- Sidebar / Bottom Bar on mobile -->
     <nav class="sidebar" id="app-sidebar">
-      <a class="nav-item active" id="nav-home" href="#home">
+      <a class="nav-item active" id="nav-home" href="#home" aria-label="Subscriptions">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
         <span>Subscriptions</span>
         <span class="badge" id="badge-unwatched" style="display: none;">0</span>
       </a>
-      <a class="nav-item" id="nav-movies" href="#movies">
+      <a class="nav-item" id="nav-movies" href="#movies" aria-label="Movies">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="#F5C518"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
         <span>Movies</span>
       </a>
-      <a class="nav-item" id="nav-shows" href="#shows">
+      <a class="nav-item" id="nav-shows" href="#shows" aria-label="Shows">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="#A855F7"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
         <span>Shows</span>
       </a>
-      <a class="nav-item" id="nav-channels" href="#channels">
+      <a class="nav-item" id="nav-music" href="#music" aria-label="Music">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#22C55E"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+        <span>Music</span>
+      </a>
+      <a class="nav-item" id="nav-channels" href="#channels" aria-label="Channels">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
         <span>Channels</span>
       </a>
-      <a class="nav-item" id="nav-gone" href="#gone-soon">
+      <a class="nav-item" id="nav-gone" href="#gone-soon" aria-label="Gone soon">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
         <span>Gone soon</span>
       </a>
@@ -327,7 +331,102 @@
         <div class="details-body" id="show-details-body"></div>
       </div>
 
+      <!-- 7. Music View -->
+      <div id="music-view" class="music-view" style="display: none;">
+        <div class="music-tabs" id="music-tabs">
+          <a class="chip" data-music-tab="home" href="#music">Home</a>
+          <a class="chip" data-music-tab="songs" href="#music/songs">Songs</a>
+          <a class="chip" data-music-tab="artists" href="#music/artists">Artists</a>
+          <a class="chip" data-music-tab="collections" href="#music/collections">Collections</a>
+          <a class="chip" data-music-tab="favorites" href="#music/favorites">Favorites</a>
+          <a class="chip" data-music-tab="playlists" href="#music/playlists">Playlists</a>
+          <a class="chip" data-music-tab="search" href="#music/search">Search</a>
+        </div>
+        <div class="music-content" id="music-content"></div>
+      </div>
+
     </main>
+  </div>
+
+  <!-- Music mini player (visible while a track is loaded) -->
+  <div class="music-mini" id="music-mini" style="display: none;">
+    <button type="button" class="music-mini-info" id="music-mini-open" aria-label="Open now playing">
+      <img class="music-art" id="music-mini-art" alt="" src="">
+      <div class="music-mini-text">
+        <div class="music-mini-title" id="music-mini-title"></div>
+        <div class="music-mini-artist" id="music-mini-artist"></div>
+      </div>
+    </button>
+    <button type="button" class="music-icon-btn" id="music-mini-toggle" aria-label="Play">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path class="music-icon-play" d="M8 5v14l11-7z"/><path class="music-icon-pause" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" style="display: none;"/></svg>
+    </button>
+    <button type="button" class="music-icon-btn" id="music-mini-next" aria-label="Next track">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+    </button>
+  </div>
+
+  <!-- Music now-playing screen -->
+  <div class="music-now" id="music-now" style="display: none;" role="dialog" aria-label="Now playing">
+    <div class="music-now-header">
+      <button type="button" class="music-icon-btn" id="music-now-close" aria-label="Close now playing">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+      </button>
+      <span class="music-now-header-label">Now playing</span>
+      <button type="button" class="music-icon-btn" id="music-now-queue-toggle" aria-label="Show queue">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zm13-2v8l6-4-6-4z"/></svg>
+      </button>
+    </div>
+    <div class="music-now-body" id="music-now-body">
+      <img class="music-art music-now-art" id="music-now-art" alt="" src="">
+      <div class="music-now-meta">
+        <div class="music-now-title" id="music-now-title"></div>
+        <div class="music-now-artist" id="music-now-artist"></div>
+      </div>
+      <div class="music-now-progress">
+        <input type="range" id="music-seek" min="0" max="1000" value="0" step="1" aria-label="Seek">
+        <div class="music-now-times"><span id="music-time-cur">0:00</span><span id="music-time-dur">0:00</span></div>
+      </div>
+      <div class="music-now-controls">
+        <button type="button" class="music-icon-btn" id="music-shuffle" aria-label="Shuffle" aria-pressed="false">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+        </button>
+        <button type="button" class="music-icon-btn" id="music-now-prev" aria-label="Previous track">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+        </button>
+        <button type="button" class="music-icon-btn music-play-main" id="music-now-toggle" aria-label="Play">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path class="music-icon-play" d="M8 5v14l11-7z"/><path class="music-icon-pause" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" style="display: none;"/></svg>
+        </button>
+        <button type="button" class="music-icon-btn" id="music-now-next" aria-label="Next track">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+        <button type="button" class="music-icon-btn" id="music-repeat" aria-label="Repeat: off">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
+          <span class="music-repeat-one" id="music-repeat-one" style="display: none;">1</span>
+        </button>
+      </div>
+      <div class="music-now-extras">
+        <button type="button" class="music-icon-btn" id="music-now-favorite" aria-label="Add to favorites" aria-pressed="false">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </button>
+        <button type="button" class="music-icon-btn" id="music-now-add" aria-label="More track options">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M14 10H3v2h11v-2zm0-4H3v2h11V6zm4 8v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM3 16h7v-2H3v2z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="music-queue" id="music-queue" style="display: none;"></div>
+  </div>
+
+  <!-- Add-to-playlist picker -->
+  <div class="music-picker" id="music-picker" style="display: none;" role="dialog" aria-label="Track options">
+    <div class="music-picker-card">
+      <div class="music-picker-title">Track options</div>
+      <div class="music-picker-list" id="music-picker-list"></div>
+      <form class="music-picker-new" id="music-picker-new" autocomplete="off">
+        <input type="text" id="music-picker-name" maxlength="80" placeholder="New playlist name" required>
+        <button type="submit" class="chip active">Create</button>
+      </form>
+      <button type="button" class="chip" id="music-picker-close">Close</button>
+    </div>
   </div>
 
   <!-- Floating 2-Option Context Menu for Video Cards (...) -->
@@ -368,9 +467,10 @@
   <script src="/js/hls.min.js"></script>
   <script src="/js/marked.umd.js"></script>
   <script src="/js/purify.min.js"></script>
-  <script src="/js/api.js?v=17"></script>
+  <script src="/js/api.js?v=19"></script>
   <script src="/js/player.js?v=18"></script>
-    <script src="/js/app.js?v=28"></script>
+  <script src="/js/music-player.js?v=1"></script>
+  <script src="/js/app.js?v=31"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.warn);

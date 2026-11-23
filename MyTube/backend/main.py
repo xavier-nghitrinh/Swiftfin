@@ -15,6 +15,7 @@ from backend.feed_service import FeedService
 from backend.playback_service import PlaybackService
 from backend.cleanup_service import CleanupService
 from backend.movies_service import MoviesService
+from backend.music_service import MusicService
 from backend.shows_service import ShowsService
 from backend.user_service import UserService
 from backend.scraper_channels_service import ScraperChannelError, ScraperChannelService
@@ -66,6 +67,15 @@ class ScraperChannelPayload(BaseModel):
 
 class SynthesisPayload(BaseModel):
     subtitle_index: int
+
+class MusicFavoritePayload(BaseModel):
+    favorite: bool
+
+class MusicPlaylistPayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+
+class MusicPlaylistTrackPayload(BaseModel):
+    track_id: str = Field(..., min_length=1)
 
 def get_current_user(x_mytube_user: Optional[str] = Header(None, alias="X-MyTube-User")) -> Dict[str, Any]:
     """Resolve the MyTube user identified by the X-MyTube-User header."""
@@ -247,8 +257,9 @@ def proxy_jellyfin_media(item_id: str, resource: str, request: Request):
             UNION ALL SELECT 1 FROM movies WHERE jellyfin_item_id = ?
             UNION ALL SELECT 1 FROM shows WHERE jellyfin_item_id = ?
             UNION ALL SELECT 1 FROM episodes WHERE jellyfin_item_id = ?
+            UNION ALL SELECT 1 FROM music_tracks WHERE track_id = ? OR image_item_id = ?
             LIMIT 1
-        """, (item_id, item_id, item_id, item_id))
+        """, (item_id, item_id, item_id, item_id, item_id, item_id))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Jellyfin item not found")
 
@@ -361,6 +372,101 @@ def get_show_detail(show_id: str, user: Dict[str, Any] = Depends(get_current_use
     if not detail:
         raise HTTPException(status_code=404, detail="Show not found")
     return detail
+
+@app.get("/api/music/home")
+def get_music_home(user: Dict[str, Any] = Depends(get_current_user)):
+    """Music home: random picks, favorites, recently played, forgotten favorites, and browse shelves."""
+    return MusicService.get_home(user["user_id"])
+
+@app.get("/api/music/tracks")
+def list_music_tracks(q: str = Query("", max_length=100), user: Dict[str, Any] = Depends(get_current_user)):
+    return {"tracks": MusicService.get_tracks(user["user_id"], q)}
+
+@app.get("/api/music/artists")
+def list_music_artists(user: Dict[str, Any] = Depends(get_current_user)):
+    return {"artists": MusicService.get_artists(user["user_id"])}
+
+@app.get("/api/music/artists/{artist:path}")
+def get_music_artist(artist: str, user: Dict[str, Any] = Depends(get_current_user)):
+    tracks = MusicService.get_artist_tracks(user["user_id"], artist)
+    if not tracks:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return {"artist": artist, "tracks": tracks}
+
+@app.get("/api/music/collections")
+def list_music_collections(user: Dict[str, Any] = Depends(get_current_user)):
+    return {"collections": MusicService.get_collections(user["user_id"])}
+
+@app.get("/api/music/collections/{collection:path}")
+def get_music_collection(collection: str, user: Dict[str, Any] = Depends(get_current_user)):
+    tracks = MusicService.get_collection_tracks(user["user_id"], collection)
+    if not tracks:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    return {"collection": collection, "tracks": tracks}
+
+@app.get("/api/music/favorites")
+def list_music_favorites(user: Dict[str, Any] = Depends(get_current_user)):
+    return {"tracks": MusicService.get_favorites(user["user_id"])}
+
+@app.put("/api/music/tracks/{track_id}/favorite")
+def set_music_favorite(track_id: str, payload: MusicFavoritePayload, user: Dict[str, Any] = Depends(get_current_user)):
+    if not MusicService.track_exists(track_id):
+        raise HTTPException(status_code=404, detail="Track not found")
+    MusicService.set_favorite(user["user_id"], track_id, payload.favorite)
+    return {"track_id": track_id, "favorite": payload.favorite}
+
+@app.post("/api/music/tracks/{track_id}/played")
+def record_music_play(track_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """Count a play once the listener has heard enough of the track (the client decides when)."""
+    if not MusicService.track_exists(track_id):
+        raise HTTPException(status_code=404, detail="Track not found")
+    MusicService.record_play(user["user_id"], track_id)
+    return {"status": "ok"}
+
+@app.get("/api/music/playlists")
+def list_music_playlists(user: Dict[str, Any] = Depends(get_current_user)):
+    return {"playlists": MusicService.list_playlists(user["user_id"])}
+
+@app.post("/api/music/playlists", status_code=201)
+def create_music_playlist(payload: MusicPlaylistPayload, user: Dict[str, Any] = Depends(get_current_user)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Playlist name is required")
+    return MusicService.create_playlist(user["user_id"], name)
+
+@app.get("/api/music/playlists/{playlist_id}")
+def get_music_playlist(playlist_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    playlist = MusicService.get_playlist(user["user_id"], playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return playlist
+
+@app.put("/api/music/playlists/{playlist_id}")
+def rename_music_playlist(playlist_id: str, payload: MusicPlaylistPayload, user: Dict[str, Any] = Depends(get_current_user)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Playlist name is required")
+    if not MusicService.rename_playlist(user["user_id"], playlist_id, name):
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return {"playlist_id": playlist_id, "name": name}
+
+@app.delete("/api/music/playlists/{playlist_id}", status_code=204)
+def delete_music_playlist(playlist_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    if not MusicService.delete_playlist(user["user_id"], playlist_id):
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return Response(status_code=204)
+
+@app.post("/api/music/playlists/{playlist_id}/tracks", status_code=201)
+def add_music_playlist_track(playlist_id: str, payload: MusicPlaylistTrackPayload, user: Dict[str, Any] = Depends(get_current_user)):
+    if not MusicService.add_playlist_track(user["user_id"], playlist_id, payload.track_id):
+        raise HTTPException(status_code=404, detail="Playlist or track not found")
+    return {"status": "ok"}
+
+@app.delete("/api/music/playlists/{playlist_id}/items/{item_id}", status_code=204)
+def remove_music_playlist_item(playlist_id: str, item_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    if not MusicService.remove_playlist_item(user["user_id"], playlist_id, item_id):
+        raise HTTPException(status_code=404, detail="Playlist item not found")
+    return Response(status_code=204)
 
 @app.get("/api/search")
 def search_videos(q: str = Query(..., min_length=1), user: Dict[str, Any] = Depends(get_current_user)):

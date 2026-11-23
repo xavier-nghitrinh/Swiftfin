@@ -188,6 +188,59 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_jellyfin ON episodes (jellyfin_item_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_episodes_status ON episodes (file_status)")
 
+        # Music tracks (Jellyfin Audio items). Each track is its own single-track album in Jellyfin,
+        # so the artist is parsed from the "Artist - Title" name and source_group keeps the Jellyfin playlist folder.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS music_tracks (
+                track_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                source_group TEXT DEFAULT '',
+                image_item_id TEXT DEFAULT '',
+                duration REAL DEFAULT 0,
+                release_year INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_artist ON music_tracks (artist, title)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_group ON music_tracks (source_group, title)")
+
+        # Per-user music state: favorites and play history (drives recently played and forgotten shelves)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_music (
+                user_id TEXT NOT NULL,
+                track_id TEXT NOT NULL,
+                favorite INTEGER DEFAULT 0,
+                favorited_at TEXT,
+                play_count INTEGER DEFAULT 0,
+                last_played_at TEXT,
+                PRIMARY KEY (user_id, track_id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS music_playlists (
+                playlist_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_playlists_user ON music_playlists (user_id)")
+
+        # item_id keeps the same track addable more than once to a playlist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS music_playlist_items (
+                item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id TEXT NOT NULL,
+                track_id TEXT NOT NULL,
+                added_at TEXT NOT NULL
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_playlist_items ON music_playlist_items (playlist_id, item_id)")
+
         if not users_existed:
             _migrate_to_multi_user(cursor)
 

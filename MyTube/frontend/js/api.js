@@ -267,6 +267,119 @@ const api = {
     return await res.json();
   },
 
+  async getMusicHome() {
+    const res = await this.request(`${API_BASE}/music/home`);
+    if (!res.ok) throw new Error(`Failed to fetch music home: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getMusicTracks(q = '') {
+    const params = new URLSearchParams({ q });
+    const res = await this.request(`${API_BASE}/music/tracks?${params}`);
+    if (!res.ok) throw new Error(`Failed to fetch tracks: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getMusicArtists() {
+    const res = await this.request(`${API_BASE}/music/artists`);
+    if (!res.ok) throw new Error(`Failed to fetch artists: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getMusicArtist(name) {
+    const res = await this.request(`${API_BASE}/music/artists/${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error(`Failed to fetch artist: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getMusicCollections() {
+    const res = await this.request(`${API_BASE}/music/collections`);
+    if (!res.ok) throw new Error(`Failed to fetch collections: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getMusicCollection(name) {
+    const res = await this.request(`${API_BASE}/music/collections/${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error(`Failed to fetch collection: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getMusicFavorites() {
+    const res = await this.request(`${API_BASE}/music/favorites`);
+    if (!res.ok) throw new Error(`Failed to fetch favorites: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async setMusicFavorite(trackId, favorite) {
+    const res = await this.request(`${API_BASE}/music/tracks/${encodeURIComponent(trackId)}/favorite`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ favorite })
+    });
+    if (!res.ok) throw new Error(`Failed to update favorite: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async recordMusicPlay(trackId) {
+    const res = await this.request(`${API_BASE}/music/tracks/${encodeURIComponent(trackId)}/played`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Failed to record play: ${res.statusText}`);
+  },
+
+  async getMusicPlaylists() {
+    const res = await this.request(`${API_BASE}/music/playlists`);
+    if (!res.ok) throw new Error(`Failed to fetch playlists: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async getMusicPlaylist(playlistId) {
+    const res = await this.request(`${API_BASE}/music/playlists/${encodeURIComponent(playlistId)}`);
+    if (!res.ok) throw new Error(`Failed to fetch playlist: ${res.statusText}`);
+    return await res.json();
+  },
+
+  async createMusicPlaylist(name) {
+    const res = await this.request(`${API_BASE}/music/playlists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `Failed to create playlist: ${res.statusText}`);
+    return body;
+  },
+
+  async renameMusicPlaylist(playlistId, name) {
+    const res = await this.request(`${API_BASE}/music/playlists/${encodeURIComponent(playlistId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `Failed to rename playlist: ${res.statusText}`);
+    return body;
+  },
+
+  async deleteMusicPlaylist(playlistId) {
+    const res = await this.request(`${API_BASE}/music/playlists/${encodeURIComponent(playlistId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`Failed to delete playlist: ${res.statusText}`);
+  },
+
+  async addMusicPlaylistTrack(playlistId, trackId) {
+    const res = await this.request(`${API_BASE}/music/playlists/${encodeURIComponent(playlistId)}/tracks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track_id: trackId })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === 'string' ? body.detail : `Failed to add track: ${res.statusText}`);
+    return body;
+  },
+
+  async removeMusicPlaylistItem(playlistId, itemId) {
+    const res = await this.request(`${API_BASE}/music/playlists/${encodeURIComponent(playlistId)}/items/${encodeURIComponent(itemId)}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`Failed to remove track: ${res.statusText}`);
+  },
+
   async getStats() {
     const res = await this.request(`${API_BASE}/stats`);
     if (!res.ok) throw new Error(`Failed to fetch stats: ${res.statusText}`);

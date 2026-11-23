@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mytube-v23';
+const CACHE_NAME = 'mytube-v25';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
   '/js/hls.min.js',
   '/js/api.js',
   '/js/player.js',
+  '/js/music-player.js',
   '/js/app.js',
   '/js/marked.umd.js',
   '/js/purify.min.js',
