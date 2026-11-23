@@ -968,8 +968,7 @@ const Player = {
         thumb ? new URL(thumb, window.location.href).href : '',
         num(this.getCurrentTime()),
         num(this.getDuration()),
-        num(this.video.playbackRate) || 1,
-        false
+        num(this.video.playbackRate) || 1
       );
     } catch (e) {}
   },

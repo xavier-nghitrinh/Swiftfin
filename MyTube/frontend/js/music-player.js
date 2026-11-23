@@ -781,7 +781,7 @@ const MusicPlayer = {
     const num = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
     const playing = !this.audio.paused && !this.audio.ended;
     try {
-      bridge.onPlaybackState(
+      bridge.onPlaybackStateWithQueue(
         playing,
         track.title || '',
         track.artist || '',

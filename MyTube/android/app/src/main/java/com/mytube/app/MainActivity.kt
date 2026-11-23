@@ -290,8 +290,22 @@ class MainActivity : Activity() {
 
     /** Methods called from the web player via window.MyTubeAndroid (on a WebView background thread). */
     private inner class Bridge {
+        // Keep this 7-argument signature: the video player calls it, and WebView silently drops a call
+        // whose argument count does not match, which would stop the playback service from starting.
         @JavascriptInterface
         fun onPlaybackState(
+            playing: Boolean,
+            title: String?,
+            artist: String?,
+            artworkUrl: String?,
+            positionSec: Double,
+            durationSec: Double,
+            rate: Double,
+        ) = onPlaybackStateWithQueue(playing, title, artist, artworkUrl, positionSec, durationSec, rate, false)
+
+        /** canSkip is true when the web player has a queue, which enables previous/next controls. */
+        @JavascriptInterface
+        fun onPlaybackStateWithQueue(
             playing: Boolean,
             title: String?,
             artist: String?,
