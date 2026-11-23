@@ -2651,6 +2651,34 @@ video {
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
 }
 
+/* Taller invisible hit area so the thin track is easy to grab */
+.music-mini-progress {
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 12px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.music-mini-progress-track {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.music-mini-progress-fill {
+  width: 0;
+  height: 100%;
+  background: var(--accent-red);
+}
+
 .music-mini-info {
   flex: 1;
   min-width: 0;
@@ -2744,9 +2772,30 @@ video {
 }
 
 .music-now-artist {
-  margin-top: 4px;
+  display: block;
+  max-width: 100%;
+  margin: 4px auto 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
   color: var(--text-muted);
+  font: inherit;
   font-size: 0.95rem;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.music-now-artist:hover,
+.music-now-artist:focus-visible {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.music-now-artist:disabled {
+  cursor: default;
+  text-decoration: none;
 }
 
 .music-now-progress {

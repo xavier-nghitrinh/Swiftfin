@@ -838,11 +838,13 @@ const App = {
       onClick: () => { window.location.hash = `#music/playlist/${encodeURIComponent(playlist.playlist_id)}`; }
     }));
 
+    const collectionContext = (track) => this.musicCollectionTracks(track);
+    const favoritesContext = async () => (await api.getMusicFavorites()).tracks;
     const shelves = [
-      this.musicTrackShelf('Random picks', data.random_tracks),
-      this.musicTrackShelf('Favorites', data.favorites),
-      this.musicTrackShelf('Recently played', data.recently_played),
-      this.musicTrackShelf('Long time no listen', data.forgotten),
+      this.musicTrackShelf('Random picks', data.random_tracks, collectionContext),
+      this.musicTrackShelf('Favorites', data.favorites, favoritesContext),
+      this.musicTrackShelf('Recently played', data.recently_played, collectionContext),
+      this.musicTrackShelf('Long time no listen', data.forgotten, collectionContext),
       this.musicCardShelf('Artists', artistCards),
       this.musicCardShelf('Collections', collectionCards),
       this.musicCardShelf('Playlists', playlistCards)
@@ -893,7 +895,7 @@ const App = {
   musicPlayActions(tracks) {
     return [
       { label: 'Play', onClick: () => MusicPlayer.playList(tracks, 0) },
-      { label: 'Shuffle', onClick: () => MusicPlayer.playList(tracks, 0, { shuffle: true }) }
+      { label: 'Shuffle', onClick: () => MusicPlayer.playList(tracks, null, { shuffle: true }) }
     ];
   },
 
@@ -996,16 +998,41 @@ const App = {
     return shelf;
   },
 
-  musicTrackShelf(title, tracks) {
+  musicTrackShelf(title, tracks, loadContext) {
     if (!tracks || !tracks.length) return null;
     const track = this.musicEl('div', 'music-shelf-track');
-    tracks.forEach((item, i) => track.append(this.musicCard({
+    tracks.forEach((item) => track.append(this.musicCard({
       image: item.image_url,
       title: item.title,
       subtitle: item.artist || '',
-      onClick: () => MusicPlayer.playList(tracks, i)
+      onClick: () => this.playMusicFromContext(item, loadContext)
     })));
-    return this.musicShelf(title, track, this.musicPlayActions(tracks));
+    const actions = [
+      { label: 'Play', onClick: () => this.playMusicFromContext(tracks[0], loadContext) },
+      {
+        label: 'Shuffle',
+        onClick: () => this.playMusicFromContext(tracks[Math.floor(Math.random() * tracks.length)], loadContext, { shuffle: true })
+      }
+    ];
+    return this.musicShelf(title, track, actions);
+  },
+
+  // A track's queue comes from the collection it belongs to, unless the caller supplies another source.
+  async musicCollectionTracks(track) {
+    if (!track.source_group) return [track];
+    const { tracks } = await api.getMusicCollection(track.source_group);
+    return tracks;
+  },
+
+  async playMusicFromContext(track, loadContext, opts = {}) {
+    try {
+      const tracks = await loadContext(track);
+      const index = tracks.findIndex((item) => item.track_id === track.track_id);
+      if (index < 0) MusicPlayer.playList([track], 0, opts);
+      else MusicPlayer.playList(tracks, index, opts);
+    } catch (err) {
+      this.showToast(err.message);
+    }
   },
 
   musicCardShelf(title, cards) {

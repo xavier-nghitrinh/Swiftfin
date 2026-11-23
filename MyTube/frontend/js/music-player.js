@@ -33,8 +33,15 @@ const MusicPlayer = {
     });
 
     document.getElementById('music-mini-open').addEventListener('click', () => this.openNow());
+    document.getElementById('music-mini-prev').addEventListener('click', () => this.previous());
     document.getElementById('music-mini-toggle').addEventListener('click', () => this.togglePlay());
     document.getElementById('music-mini-next').addEventListener('click', () => this.next());
+
+    const miniProgress = document.getElementById('music-mini-progress');
+    miniProgress.addEventListener('pointerdown', (event) => this.startProgressDrag(event));
+    miniProgress.addEventListener('pointermove', (event) => this.moveProgressDrag(event));
+    miniProgress.addEventListener('pointerup', (event) => this.endProgressDrag(event, true));
+    miniProgress.addEventListener('pointercancel', (event) => this.endProgressDrag(event, false));
     document.getElementById('music-now-close').addEventListener('click', () => this.closeNow());
     document.getElementById('music-now-queue-toggle').addEventListener('click', () => this.toggleQueue());
     document.getElementById('music-now-toggle').addEventListener('click', () => this.togglePlay());
@@ -44,6 +51,7 @@ const MusicPlayer = {
     document.getElementById('music-repeat').addEventListener('click', () => this.cycleRepeat());
     document.getElementById('music-now-favorite').addEventListener('click', () => this.toggleFavorite(this.current()));
     document.getElementById('music-now-add').addEventListener('click', () => this.openPicker(this.current()));
+    document.getElementById('music-now-artist').addEventListener('click', () => this.openArtist());
 
     const seek = document.getElementById('music-seek');
     seek.addEventListener('input', () => {
@@ -70,18 +78,22 @@ const MusicPlayer = {
   // =========================================================
   // Public API
   // =========================================================
-  playList(tracks, startIndex = 0, { shuffle = false } = {}) {
+  // startIndex null picks a random track when shuffling; the chosen track
+  // plays first and the rest of the list follows in random order.
+  playList(tracks, startIndex = null, { shuffle = false } = {}) {
     if (!tracks || !tracks.length) return;
     if (Player.isActive) Player.stop();
 
     this.sourceOrder = tracks.slice();
     this.shuffleOn = shuffle;
-    let start = Math.min(Math.max(startIndex, 0), tracks.length - 1);
-    this.queue = tracks.slice();
+    const requested = startIndex ?? (shuffle ? Math.floor(Math.random() * tracks.length) : 0);
+    let start = Math.min(Math.max(requested, 0), tracks.length - 1);
     if (shuffle) {
-      const first = this.queue[start];
-      this.queue = [first, ...this.shuffleArray(this.queue.filter((_, i) => i !== start))];
+      const rest = tracks.filter((_, i) => i !== start);
+      this.queue = [tracks[start], ...this.shuffleArray(rest)];
       start = 0;
+    } else {
+      this.queue = tracks.slice();
     }
     this.index = start;
     this.updateShuffleUi();
@@ -309,7 +321,9 @@ const MusicPlayer = {
     document.getElementById('music-mini-artist').textContent = track.artist || '';
     document.getElementById('music-mini-art').src = art;
     document.getElementById('music-now-title').textContent = track.title;
-    document.getElementById('music-now-artist').textContent = track.artist || '';
+    const nowArtist = document.getElementById('music-now-artist');
+    nowArtist.textContent = track.artist || '';
+    nowArtist.disabled = !track.artist;
     document.getElementById('music-now-art').src = art;
     this.updateFavoriteUi();
 
@@ -349,10 +363,7 @@ const MusicPlayer = {
   refreshProgress() {
     const duration = this.duration();
     const current = this.audio.currentTime || 0;
-    const seek = document.getElementById('music-seek');
-    seek.value = duration > 0 ? Math.round((Math.min(current, duration) / duration) * 1000) : 0;
-    document.getElementById('music-time-cur').textContent = this.formatTime(current);
-    document.getElementById('music-time-dur').textContent = this.formatTime(duration);
+    this.renderProgress(current, duration);
 
     if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && duration > 0) {
       try {
@@ -365,6 +376,43 @@ const MusicPlayer = {
         console.warn('Failed to update media position:', err);
       }
     }
+  },
+
+  renderProgress(current, duration) {
+    const percent = duration > 0 ? Math.min(current, duration) / duration * 100 : 0;
+    const seek = document.getElementById('music-seek');
+    seek.value = Math.round(percent * 10);
+    document.getElementById('music-time-cur').textContent = this.formatTime(current);
+    document.getElementById('music-time-dur').textContent = this.formatTime(duration);
+
+    const bar = document.getElementById('music-mini-progress');
+    bar.setAttribute('aria-valuenow', Math.round(percent));
+    document.getElementById('music-mini-progress-fill').style.width = `${percent}%`;
+  },
+
+  progressTimeFromPointer(event) {
+    const rect = document.getElementById('music-mini-progress').getBoundingClientRect();
+    const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
+    return ratio * this.duration();
+  },
+
+  startProgressDrag(event) {
+    if (event.button !== 0 || !(this.duration() > 0)) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    this.isSeeking = true;
+    this.renderProgress(this.progressTimeFromPointer(event), this.duration());
+  },
+
+  moveProgressDrag(event) {
+    if (!this.isSeeking) return;
+    this.renderProgress(this.progressTimeFromPointer(event), this.duration());
+  },
+
+  endProgressDrag(event, commit) {
+    if (!this.isSeeking) return;
+    if (commit) this.audio.currentTime = this.progressTimeFromPointer(event);
+    this.isSeeking = false;
+    this.refreshProgress();
   },
 
   updateShuffleUi() {
@@ -385,6 +433,13 @@ const MusicPlayer = {
     document.getElementById('music-now').style.display = 'flex';
     this.updateFavoriteUi();
     this.renderQueue();
+  },
+
+  openArtist() {
+    const track = this.current();
+    if (!track || !track.artist) return;
+    this.closeNow();
+    window.location.hash = `#music/artist/${encodeURIComponent(track.artist)}`;
   },
 
   closeNow() {
