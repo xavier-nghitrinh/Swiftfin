@@ -8,6 +8,7 @@ const LRCLIB_API = 'https://lrclib.net/api';
 
 const MusicPlayer = {
   audio: null,
+  seekStepSeconds: 10,
   queue: [],
   sourceOrder: [], // Order the current list was started in; restored when shuffle is turned off
   index: -1,
@@ -36,6 +37,7 @@ const MusicPlayer = {
     this.audio.addEventListener('pause', () => this.onAudioPause());
     this.audio.addEventListener('ended', () => this.onEnded());
     this.audio.addEventListener('timeupdate', () => this.onTimeUpdate());
+    this.audio.addEventListener('seeked', () => this.notifyNativePlayback());
     this.audio.addEventListener('loadedmetadata', () => this.refreshProgress());
     this.audio.addEventListener('error', () => {
       if (!this.audio.getAttribute('src')) return;
@@ -158,6 +160,9 @@ const MusicPlayer = {
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = 'none';
+    }
+    if (window.MyTubeAndroid) {
+      try { window.MyTubeAndroid.onPlaybackStopped(); } catch (e) {}
     }
     this.renderQueue();
   },
@@ -548,6 +553,7 @@ const MusicPlayer = {
     if ('mediaSession' in navigator) {
       navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
     }
+    this.notifyNativePlayback();
   },
 
   refreshProgress() {
@@ -767,6 +773,54 @@ const MusicPlayer = {
     document.getElementById('music-picker-list').replaceChildren();
   },
 
+  // Android wrapper app (MyTube/android): drives the background-playback service and lock-screen controls.
+  notifyNativePlayback() {
+    const bridge = window.MyTubeAndroid;
+    const track = this.current();
+    if (!bridge || !track) return;
+    const num = (v) => (Number.isFinite(v) && v > 0 ? v : 0);
+    const playing = !this.audio.paused && !this.audio.ended;
+    try {
+      bridge.onPlaybackState(
+        playing,
+        track.title || '',
+        track.artist || '',
+        track.image_url ? new URL(track.image_url, window.location.href).href : '',
+        num(this.audio.currentTime),
+        num(this.duration(track)),
+        1,
+        this.queue.length > 1
+      );
+    } catch (e) {}
+  },
+
+  nativeCommand(command, arg) {
+    if (!this.current()) return;
+    switch (command) {
+      case 'play':
+        this.audio.play().catch((err) => this.onPlayError(err));
+        break;
+      case 'pause':
+        this.requestPause();
+        break;
+      case 'next':
+        this.next();
+        break;
+      case 'previous':
+        this.previous();
+        break;
+      case 'seekbackward':
+        this.audio.currentTime = Math.max(0, this.audio.currentTime - this.seekStepSeconds);
+        break;
+      case 'seekforward':
+        this.audio.currentTime = Math.min(this.duration(), this.audio.currentTime + this.seekStepSeconds);
+        break;
+      case 'seekto':
+        if (Number.isFinite(arg)) this.audio.currentTime = arg;
+        break;
+    }
+  },
+
   // =========================================================
   // Media Session (lock screen and notification controls)
   // =========================================================
@@ -799,3 +853,5 @@ const MusicPlayer = {
     return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
   }
 };
+
+window.MusicPlayer = MusicPlayer;

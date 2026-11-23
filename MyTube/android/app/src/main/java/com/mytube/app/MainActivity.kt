@@ -203,8 +203,10 @@ class MainActivity : Activity() {
     }
 
     private fun sendCommand(command: String, arg: Double) {
-        val js = "window.Player && typeof window.Player.nativeCommand === 'function' && " +
-            "window.Player.nativeCommand(${JSONObject.quote(command)}, ${if (arg.isFinite()) arg else 0.0})"
+        val safeArg = if (arg.isFinite()) arg else 0.0
+        // Each player ignores commands unless it is the one currently playing
+        val js = "[window.Player, window.MusicPlayer].forEach(function (p) { " +
+            "if (p && typeof p.nativeCommand === 'function') p.nativeCommand(${JSONObject.quote(command)}, $safeArg); });"
         webView.evaluateJavascript(js, null)
     }
 
@@ -297,8 +299,9 @@ class MainActivity : Activity() {
             positionSec: Double,
             durationSec: Double,
             rate: Double,
+            canSkip: Boolean,
         ) {
-            val info = PlaybackInfo(playing, title.orEmpty(), artist.orEmpty(), artworkUrl.orEmpty(), positionSec, durationSec, rate)
+            val info = PlaybackInfo(playing, title.orEmpty(), artist.orEmpty(), artworkUrl.orEmpty(), positionSec, durationSec, rate, canSkip)
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 webView.keepAlive = playing

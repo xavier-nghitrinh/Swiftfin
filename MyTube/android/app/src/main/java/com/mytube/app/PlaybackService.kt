@@ -12,6 +12,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -36,6 +37,8 @@ data class PlaybackInfo(
     val positionSec: Double,
     val durationSec: Double,
     val rate: Double,
+    /** True when the web player has a queue, so previous/next track controls apply. */
+    val canSkip: Boolean,
 )
 
 /**
@@ -53,12 +56,18 @@ class PlaybackService : Service() {
         private const val ACTION_PAUSE = "com.mytube.app.action.PAUSE"
         private const val ACTION_REWIND = "com.mytube.app.action.REWIND"
         private const val ACTION_FORWARD = "com.mytube.app.action.FORWARD"
+        private const val ACTION_PREVIOUS = "com.mytube.app.action.PREVIOUS"
+        private const val ACTION_NEXT = "com.mytube.app.action.NEXT"
+        private const val CUSTOM_SKIP_BACK = "skip_back"
+        private const val CUSTOM_SKIP_FORWARD = "skip_forward"
         private const val WAKE_LOCK_TIMEOUT_MS = 6L * 60 * 60 * 1000
         private const val SESSION_ACTIONS =
             PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
                 PlaybackStateCompat.ACTION_PLAY_PAUSE or PlaybackStateCompat.ACTION_SEEK_TO or
                 PlaybackStateCompat.ACTION_REWIND or PlaybackStateCompat.ACTION_FAST_FORWARD or
                 PlaybackStateCompat.ACTION_STOP
+        private const val QUEUE_ACTIONS =
+            PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or PlaybackStateCompat.ACTION_SKIP_TO_NEXT
 
         /** Receives (command, argument) to forward into the web player. */
         var commandListener: ((String, Double) -> Unit)? = null
@@ -110,6 +119,14 @@ class PlaybackService : Service() {
                 override fun onStop() = dispatch("pause")
                 override fun onRewind() = dispatch("seekbackward")
                 override fun onFastForward() = dispatch("seekforward")
+                override fun onSkipToPrevious() = dispatch("previous")
+                override fun onSkipToNext() = dispatch("next")
+                override fun onCustomAction(action: String?, extras: Bundle?) {
+                    when (action) {
+                        CUSTOM_SKIP_BACK -> dispatch("seekbackward")
+                        CUSTOM_SKIP_FORWARD -> dispatch("seekforward")
+                    }
+                }
                 override fun onSeekTo(pos: Long) = dispatch("seekto", pos / 1000.0)
             })
         }
@@ -130,6 +147,8 @@ class PlaybackService : Service() {
             ACTION_PAUSE -> dispatch("pause")
             ACTION_REWIND -> dispatch("seekbackward")
             ACTION_FORWARD -> dispatch("seekforward")
+            ACTION_PREVIOUS -> dispatch("previous")
+            ACTION_NEXT -> dispatch("next")
             else -> {
                 val info = pendingInfo ?: current
                 pendingInfo = null
@@ -177,7 +196,13 @@ class PlaybackService : Service() {
         )
         session.setPlaybackState(
             PlaybackStateCompat.Builder()
-                .setActions(SESSION_ACTIONS)
+                .setActions(SESSION_ACTIONS or if (info.canSkip) QUEUE_ACTIONS else 0L)
+                .addCustomAction(
+                    PlaybackStateCompat.CustomAction.Builder(CUSTOM_SKIP_BACK, getString(R.string.rewind), R.drawable.ic_rewind).build()
+                )
+                .addCustomAction(
+                    PlaybackStateCompat.CustomAction.Builder(CUSTOM_SKIP_FORWARD, getString(R.string.forward), R.drawable.ic_forward).build()
+                )
                 .setState(
                     if (info.playing) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
                     positionMs,
@@ -237,7 +262,7 @@ class PlaybackService : Service() {
             action(R.drawable.ic_play, R.string.play, ACTION_PLAY, 1)
         }
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(info.title.ifBlank { getString(R.string.app_name) })
             .setContentText(info.artist)
@@ -247,9 +272,20 @@ class PlaybackService : Service() {
             .setSilent(true)
             .setShowWhen(false)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(action(R.drawable.ic_rewind, R.string.rewind, ACTION_REWIND, 3))
-            .addAction(playPause)
-            .addAction(action(R.drawable.ic_forward, R.string.forward, ACTION_FORWARD, 4))
+
+        if (info.canSkip) {
+            builder
+                .addAction(action(R.drawable.ic_skip_previous, R.string.previous, ACTION_PREVIOUS, 5))
+                .addAction(playPause)
+                .addAction(action(R.drawable.ic_skip_next, R.string.next, ACTION_NEXT, 6))
+        } else {
+            builder
+                .addAction(action(R.drawable.ic_rewind, R.string.rewind, ACTION_REWIND, 3))
+                .addAction(playPause)
+                .addAction(action(R.drawable.ic_forward, R.string.forward, ACTION_FORWARD, 4))
+        }
+
+        return builder
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(session.sessionToken)
