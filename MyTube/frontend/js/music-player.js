@@ -18,6 +18,9 @@ const MusicPlayer = {
   queueVisible: false,
   pickerTrack: null,
   pickerToken: 0,
+  wantPlaying: false, // True until the user or OS explicitly pauses; used by the lock-screen auto-resume guard
+  lastHideTime: 0,
+  autoResumedOnHide: false,
   lyricsVisible: false,
   lyricsToken: 0, // Bumped whenever the track changes so late lyric responses are ignored
   lyricsData: null, // Parsed result for the current track: { lines } | { plain } | { instrumental }
@@ -30,7 +33,7 @@ const MusicPlayer = {
     this.audio.preload = 'auto';
 
     this.audio.addEventListener('play', () => this.updatePlayUi());
-    this.audio.addEventListener('pause', () => this.updatePlayUi());
+    this.audio.addEventListener('pause', () => this.onAudioPause());
     this.audio.addEventListener('ended', () => this.onEnded());
     this.audio.addEventListener('timeupdate', () => this.onTimeUpdate());
     this.audio.addEventListener('loadedmetadata', () => this.refreshProgress());
@@ -39,6 +42,12 @@ const MusicPlayer = {
       App.showToast('Could not play this track');
       this.updatePlayUi();
     });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.lastHideTime = Date.now();
+      else this.autoResumedOnHide = false;
+    });
+    window.addEventListener('pagehide', () => { this.lastHideTime = Date.now(); });
 
     document.getElementById('music-mini-open').addEventListener('click', () => this.openNow());
     document.getElementById('music-mini-prev').addEventListener('click', () => this.previous());
@@ -110,12 +119,32 @@ const MusicPlayer = {
   },
 
   pause() {
+    this.requestPause();
+  },
+
+  // Every deliberate pause goes through here so onAudioPause does not auto-resume it
+  requestPause() {
+    this.wantPlaying = false;
     if (this.audio) this.audio.pause();
+  },
+
+  onAudioPause() {
+    const hiding = document.hidden || Date.now() - this.lastHideTime < 1500;
+    if (this.wantPlaying && hiding && !this.audio.ended && !this.autoResumedOnHide) {
+      // Some mobile browsers pause audio when the screen locks; resume once so lock-screen playback continues
+      this.autoResumedOnHide = true;
+      this.audio.play().catch(() => {
+        this.wantPlaying = false;
+        this.updatePlayUi();
+      });
+      return;
+    }
+    this.updatePlayUi();
   },
 
   stop() {
     if (!this.audio) return;
-    this.audio.pause();
+    this.requestPause();
     this.audio.removeAttribute('src');
     this.audio.load();
     this.queue = [];
@@ -126,7 +155,10 @@ const MusicPlayer = {
     this.closeNow();
     document.getElementById('music-mini').style.display = 'none';
     document.body.classList.remove('music-active');
-    if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+    }
     this.renderQueue();
   },
 
@@ -218,7 +250,7 @@ const MusicPlayer = {
     if (this.audio.paused) {
       this.audio.play().catch((err) => this.onPlayError(err));
     } else {
-      this.audio.pause();
+      this.requestPause();
     }
   },
 
@@ -231,7 +263,7 @@ const MusicPlayer = {
       this.index = 0;
       this.loadCurrent(true);
     } else {
-      this.audio.pause();
+      this.requestPause();
       this.audio.currentTime = 0;
       this.refreshProgress();
     }
@@ -508,9 +540,13 @@ const MusicPlayer = {
       btn.querySelector('.music-icon-play').style.display = playing ? 'none' : '';
       btn.querySelector('.music-icon-pause').style.display = playing ? '' : 'none';
     });
+    if (playing) {
+      this.wantPlaying = true;
+      // Bind only while music is actually playing so a video's handlers are not replaced by a stray pause event
+      this.bindMediaSession();
+    }
     if ('mediaSession' in navigator) {
       navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
-      this.bindMediaSession();
     }
   },
 
@@ -738,7 +774,7 @@ const MusicPlayer = {
     if (!('mediaSession' in navigator)) return;
     const handlers = {
       play: () => this.audio.play().catch((err) => this.onPlayError(err)),
-      pause: () => this.audio.pause(),
+      pause: () => this.requestPause(),
       previoustrack: () => this.previous(),
       nexttrack: () => this.next(),
       seekbackward: (details) => { this.audio.currentTime = Math.max(0, this.audio.currentTime - (details.seekOffset || 10)); },
