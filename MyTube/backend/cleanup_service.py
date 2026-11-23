@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from typing import Dict, Any, List
+from backend.ai_chat_store import delete_media_ai_data
 from backend.config import MAX_MEDIA_GB, REMOTE_MEDIA_DIR
 from backend.database import get_db, now_iso, find_media_item
 from backend.jellyfin_client import jellyfin
@@ -89,6 +90,7 @@ class CleanupService:
             else:
                 cursor.execute("DELETE FROM user_progress WHERE media_id = ? AND media_type = 'youtube'", (video_id,))
                 cursor.execute("DELETE FROM videos WHERE video_id = ?", (video_id,))
+            delete_media_ai_data(cursor, video_id)
             conn.commit()
 
         if refresh_library:

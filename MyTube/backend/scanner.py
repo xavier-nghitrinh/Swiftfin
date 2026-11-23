@@ -5,6 +5,7 @@ import json
 import os
 from typing import Dict, Any, List, Optional, Tuple
 
+from backend.ai_chat_store import delete_media_ai_data
 from backend.config import REMOTE_MEDIA_DIR
 from backend.database import get_db, now_iso
 from backend.jellyfin_client import jellyfin
@@ -166,13 +167,14 @@ def sync_missing_thumbnails_to_sqlite(
     return cached
 
 def _remove_missing_items(cursor, table: str, pk_col: str, jellyfin_col: str, media_type: str, present_ids: set) -> int:
-    """Delete rows whose Jellyfin item is no longer in the library, along with their watch progress."""
+    """Delete rows whose Jellyfin item is no longer in the library, along with their watch progress and AI chat."""
     cursor.execute(
         f"SELECT {pk_col}, {jellyfin_col} FROM {table} WHERE {jellyfin_col} IS NOT NULL AND {jellyfin_col} != ''"
     )
     stale = [r[pk_col] for r in cursor.fetchall() if r[jellyfin_col] not in present_ids]
     for pk in stale:
         cursor.execute("DELETE FROM user_progress WHERE media_id = ? AND media_type = ?", (pk, media_type))
+        delete_media_ai_data(cursor, pk)
         cursor.execute(f"DELETE FROM {table} WHERE {pk_col} = ?", (pk,))
     if stale:
         logger.info(f"Removed {len(stale)} {table} rows no longer present in Jellyfin.")

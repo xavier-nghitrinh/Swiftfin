@@ -241,6 +241,31 @@ def init_db():
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_music_playlist_items ON music_playlist_items (playlist_id, item_id)")
 
+        # Per-user AI synthesis note (one per user and media item) and the Q&A chat history for that item
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_ai_notes (
+                user_id TEXT NOT NULL,
+                media_id TEXT NOT NULL,
+                subtitle_label TEXT DEFAULT '',
+                markdown TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, media_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_ai_messages (
+                message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                media_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                subtitle_label TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_ai_messages_chat ON user_ai_messages (user_id, media_id, message_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_ai_messages_media ON user_ai_messages (media_id)")
+
         if not users_existed:
             _migrate_to_multi_user(cursor)
 

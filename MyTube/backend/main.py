@@ -20,7 +20,7 @@ from backend.shows_service import ShowsService
 from backend.user_service import UserService
 from backend.scraper_channels_service import ScraperChannelError, ScraperChannelService
 from backend.jellyfin_client import jellyfin
-from backend.synthesis_service import SynthesisError, synthesize_subtitle
+from backend.synthesis_service import SynthesisError, ask_video_question, load_video_ai, synthesize_subtitle
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("mytube.api")
@@ -67,6 +67,12 @@ class ScraperChannelPayload(BaseModel):
 
 class SynthesisPayload(BaseModel):
     subtitle_index: int
+    subtitle_label: str = Field("", max_length=200)
+
+class QuestionPayload(BaseModel):
+    subtitle_index: int
+    subtitle_label: str = Field("", max_length=200)
+    question: str = Field(..., max_length=2000)
 
 class MusicFavoritePayload(BaseModel):
     favorite: bool
@@ -300,13 +306,38 @@ def get_video_subtitle_vtt(video_id: str, sub_index: int):
         raise HTTPException(status_code=404, detail="Subtitle not found")
     return Response(content=vtt, media_type="text/vtt; charset=utf-8")
 
-@app.post("/api/videos/{video_id}/synthesize", dependencies=[Depends(get_current_user)])
-def synthesize_video_subtitle(video_id: str, payload: SynthesisPayload):
-    """AI Markdown synthesis of the complete selected subtitle track. Nothing is stored."""
+@app.get("/api/videos/{video_id}/ai")
+def get_video_ai(video_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    """The user's saved synthesis note and Q&A history for this video."""
+    return load_video_ai(user["user_id"], video_id)
+
+@app.post("/api/videos/{video_id}/synthesize")
+def synthesize_video_subtitle(
+    video_id: str,
+    payload: SynthesisPayload,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """AI Markdown synthesis of the complete selected subtitle track. Saved as the user's note for this video, replacing the previous one."""
     try:
-        return synthesize_subtitle(video_id, payload.subtitle_index)
+        return synthesize_subtitle(user["user_id"], video_id, payload.subtitle_index, payload.subtitle_label)
     except SynthesisError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+@app.post("/api/videos/{video_id}/ai/questions")
+def ask_question_about_video(
+    video_id: str,
+    payload: QuestionPayload,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Ask a follow-up question about the selected subtitle track. Returns the saved question and answer."""
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+    try:
+        messages = ask_video_question(user["user_id"], video_id, payload.subtitle_index, payload.subtitle_label, question)
+    except SynthesisError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return {"messages": messages}
 
 @app.post("/api/videos/{video_id}/progress")
 def report_playback_progress(

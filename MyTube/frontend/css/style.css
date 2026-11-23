@@ -985,37 +985,109 @@ video {
 }
 
 /* Custom Player Controls Overlay */
-.watch-ai-row {
+.watch-ai-chat {
   margin-top: 12px;
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 14px 16px;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.watch-ai-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.watch-ai-chat-title {
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.watch-ai-chat-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.watch-ai-chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.watch-ai-message-user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: rgba(62, 166, 255, 0.15);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.watch-ai-chat-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.watch-ai-chat-form textarea {
+  flex: 1;
+  resize: none;
+  background: var(--bg-primary);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 0.88rem;
+  max-height: 120px;
+}
+
+.watch-ai-chat-form textarea:disabled {
+  opacity: 0.5;
+}
+
+.watch-ai-chat-form button {
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.watch-ai-chat-form button:disabled,
+.watch-ai-chat-header button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .watch-ai-result {
-  margin-top: 12px;
-  background: var(--bg-card);
-  padding: 14px 18px 18px;
+  background: var(--bg-primary);
+  padding: 12px 16px 14px;
   border-radius: 12px;
   font-size: 0.88rem;
   line-height: 1.55;
   color: #ddd;
   user-select: text;
+  overflow-wrap: anywhere;
 }
 
 .watch-ai-result-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 6px;
   font-weight: 600;
-}
-
-.watch-ai-close {
-  background: none;
-  border: none;
-  color: var(--text-muted);
   font-size: 0.85rem;
-  cursor: pointer;
-  padding: 4px 6px;
+  color: var(--text-muted);
 }
 
 .watch-ai-result h3,
@@ -1079,16 +1151,6 @@ video {
 
 .watch-ai-error {
   color: #ff8a80;
-}
-
-.watch-ai-retry {
-  margin-top: 10px;
-  background: var(--accent-blue);
-  color: #fff;
-  border: none;
-  border-radius: 16px;
-  padding: 6px 14px;
-  cursor: pointer;
 }
 
 .player-data-usage {

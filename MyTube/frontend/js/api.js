@@ -189,14 +189,32 @@ const api = {
     return await res.json();
   },
 
-  async synthesizeSubtitle(videoId, subtitleIndex) {
+  async synthesizeSubtitle(videoId, subtitleIndex, subtitleLabel = '') {
     const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/synthesize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subtitle_index: subtitleIndex }),
+      body: JSON.stringify({ subtitle_index: subtitleIndex, subtitle_label: subtitleLabel }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.detail || `AI synthesis failed: ${res.statusText}`);
+    return body;
+  },
+
+  async getVideoAi(videoId) {
+    const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/ai`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || `Failed to load AI chat: ${res.statusText}`);
+    return body;
+  },
+
+  async askVideoQuestion(videoId, payload) {
+    const res = await this.request(`${API_BASE}/videos/${encodeURIComponent(videoId)}/ai/questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || `AI question failed: ${res.statusText}`);
     return body;
   },
 

@@ -1,6 +1,7 @@
 import sqlite3
 import uuid
 from typing import Any, Dict, List, Optional
+from backend.ai_chat_store import delete_user_ai_data
 from backend.database import get_db, now_iso
 
 class UserService:
@@ -69,6 +70,7 @@ class UserService:
                 (user_id,),
             )
             cursor.execute("DELETE FROM music_playlists WHERE user_id = ?", (user_id,))
+            delete_user_ai_data(cursor, user_id)
             cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
             conn.commit()
         return True

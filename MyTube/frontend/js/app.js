@@ -118,7 +118,16 @@ const App = {
     window.addEventListener('mytube:user-invalid', () => this.returnToUserSelection());
     window.addEventListener('mytube:music-changed', (e) => this.onMusicChanged(e.detail));
     window.addEventListener('mytube:subtitle-changed', (e) => this.onWatchSubtitleChanged(e.detail));
-    document.getElementById('watch-ai-btn').addEventListener('click', () => this.generateWatchAi());
+    document.getElementById('watch-ai-btn').addEventListener('click', () => this.synthesizeWatchAi());
+    document.getElementById('watch-ai-form').addEventListener('submit', (e) => this.submitWatchAiQuestion(e));
+    const watchAiInput = document.getElementById('watch-ai-input');
+    watchAiInput.addEventListener('input', () => this.updateWatchAiControls());
+    watchAiInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        document.getElementById('watch-ai-form').requestSubmit();
+      }
+    });
     // Links in the AI note open in a new tab so the app stays open
     DOMPurify.addHook('afterSanitizeAttributes', (node) => {
       if (node.tagName === 'A') {
@@ -1111,6 +1120,7 @@ const App = {
   async renderWatchView(videoId) {
     this.currentWatchVideoId = videoId;
     this.onWatchSubtitleChanged(null);
+    this.loadWatchAi(videoId);
     document.getElementById('watch-video-title').textContent = 'Loading video...';
     document.getElementById('watch-description').textContent = '';
 
@@ -1212,69 +1222,167 @@ const App = {
     }
   },
 
-  // The AI button is only offered while a subtitle track is selected; its result belongs to that track
+  // Subtitle choice gates synthesis and questions; the chat itself stays visible
   onWatchSubtitleChanged(subtitle) {
     this.watchAiSubtitle = subtitle;
-    this.watchAiRequestId = (this.watchAiRequestId || 0) + 1;
-    document.getElementById('watch-ai-row').style.display = subtitle ? 'flex' : 'none';
-    const resultEl = document.getElementById('watch-ai-result');
-    resultEl.style.display = 'none';
-    resultEl.innerHTML = '';
+    this.updateWatchAiControls();
   },
 
-  async generateWatchAi() {
-    const subtitle = this.watchAiSubtitle;
-    if (!subtitle) return;
-    const requestId = (this.watchAiRequestId = (this.watchAiRequestId || 0) + 1);
-    this.showWatchAiStatus(`Synthesizing the full ${subtitle.label} subtitle track…`);
+  // Loads this user's saved note and chat for the video. Results for another video are dropped.
+  async loadWatchAi(videoId) {
+    this.watchAiNote = null;
+    this.watchAiMessages = [];
+    this.watchAiPendingQuestion = null;
+    this.watchAiBusy = false;
+    this.watchAiStatus = null;
+    document.getElementById('watch-ai-input').value = '';
+    this.renderWatchAi();
 
     try {
-      const result = await api.synthesizeSubtitle(subtitle.videoId, subtitle.index);
-      if (requestId !== this.watchAiRequestId) return;
-      this.renderWatchAiResult(result.markdown, subtitle.label);
+      const data = await api.getVideoAi(videoId);
+      if (videoId !== this.currentWatchVideoId) return;
+      this.watchAiNote = data.note;
+      this.watchAiMessages = data.messages || [];
     } catch (e) {
-      if (requestId !== this.watchAiRequestId) return;
-      this.showWatchAiStatus(e.message || 'Synthesis failed', true);
+      if (videoId !== this.currentWatchVideoId) return;
+      this.watchAiStatus = { text: e.message || 'Could not load the AI chat', isError: true };
+    }
+    this.renderWatchAi();
+  },
+
+  // Synthesis replaces the saved note for this video; the chat history is kept
+  async synthesizeWatchAi() {
+    const subtitle = this.watchAiSubtitle;
+    const videoId = this.currentWatchVideoId;
+    if (!subtitle || !videoId || this.watchAiBusy) return;
+
+    this.watchAiBusy = true;
+    this.watchAiStatus = { text: `Synthesizing the full ${subtitle.label} subtitle track…`, isError: false };
+    this.renderWatchAi();
+
+    try {
+      const note = await api.synthesizeSubtitle(videoId, subtitle.index, subtitle.label);
+      if (videoId !== this.currentWatchVideoId) return;
+      this.watchAiNote = note;
+      this.watchAiStatus = null;
+    } catch (e) {
+      if (videoId !== this.currentWatchVideoId) return;
+      this.watchAiStatus = { text: e.message || 'Synthesis failed', isError: true };
+    } finally {
+      if (videoId === this.currentWatchVideoId) {
+        this.watchAiBusy = false;
+        this.renderWatchAi();
+      }
     }
   },
 
-  showWatchAiStatus(message, isError = false) {
-    const resultEl = document.getElementById('watch-ai-result');
-    resultEl.innerHTML = '';
-    resultEl.style.display = 'block';
-    const status = document.createElement('div');
-    status.className = `watch-ai-status${isError ? ' watch-ai-error' : ''}`;
-    status.textContent = message;
-    resultEl.appendChild(status);
-    if (isError) {
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.className = 'watch-ai-retry';
-      retry.textContent = 'Try again';
-      retry.addEventListener('click', () => this.generateWatchAi());
-      resultEl.appendChild(retry);
+  async submitWatchAiQuestion(event) {
+    event.preventDefault();
+    const subtitle = this.watchAiSubtitle;
+    const videoId = this.currentWatchVideoId;
+    const input = document.getElementById('watch-ai-input');
+    const question = input.value.trim();
+    if (!subtitle || !videoId || !question || this.watchAiBusy) return;
+
+    input.value = '';
+    this.watchAiBusy = true;
+    this.watchAiPendingQuestion = question;
+    this.watchAiStatus = { text: 'Thinking…', isError: false };
+    this.renderWatchAi();
+
+    try {
+      const data = await api.askVideoQuestion(videoId, {
+        subtitle_index: subtitle.index,
+        subtitle_label: subtitle.label,
+        question,
+      });
+      if (videoId !== this.currentWatchVideoId) return;
+      this.watchAiMessages = [...this.watchAiMessages, ...(data.messages || [])];
+      this.watchAiPendingQuestion = null;
+      this.watchAiStatus = null;
+    } catch (e) {
+      if (videoId !== this.currentWatchVideoId) return;
+      this.watchAiPendingQuestion = null;
+      input.value = question;
+      this.watchAiStatus = { text: e.message || 'Could not get an answer', isError: true };
+    } finally {
+      if (videoId === this.currentWatchVideoId) {
+        this.watchAiBusy = false;
+        this.renderWatchAi();
+      }
     }
   },
 
-  renderWatchAiResult(markdown, label) {
-    const resultEl = document.getElementById('watch-ai-result');
-    resultEl.innerHTML = '';
-    resultEl.style.display = 'block';
+  renderWatchAi() {
+    const logEl = document.getElementById('watch-ai-log');
+    logEl.innerHTML = '';
 
-    const header = document.createElement('div');
-    header.className = 'watch-ai-result-header';
-    const title = document.createElement('span');
-    title.textContent = label ? `AI Synthesis · ${label}` : 'AI Synthesis';
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'watch-ai-close';
-    close.textContent = 'Hide';
-    close.addEventListener('click', () => this.onWatchSubtitleChanged(this.watchAiSubtitle));
-    header.append(title, close);
+    if (this.watchAiNote) {
+      const label = this.watchAiNote.subtitle_label ? ` · ${this.watchAiNote.subtitle_label}` : '';
+      logEl.append(this.buildWatchAiBubble(this.watchAiNote.markdown, `AI Synthesis${label}`));
+    }
+    for (const message of this.watchAiMessages) {
+      logEl.append(message.role === 'user'
+        ? this.buildWatchAiUserMessage(message.content)
+        : this.buildWatchAiBubble(message.content));
+    }
+    if (this.watchAiPendingQuestion) {
+      logEl.append(this.buildWatchAiUserMessage(this.watchAiPendingQuestion));
+    }
+    if (this.watchAiStatus) {
+      const status = document.createElement('div');
+      status.className = `watch-ai-status${this.watchAiStatus.isError ? ' watch-ai-error' : ''}`;
+      status.textContent = this.watchAiStatus.text;
+      logEl.append(status);
+    }
+    if (!this.watchAiNote && this.watchAiMessages.length === 0 && !this.watchAiPendingQuestion && !this.watchAiStatus) {
+      const empty = document.createElement('div');
+      empty.className = 'watch-ai-status';
+      empty.textContent = 'Select a subtitle track, then synthesize it or ask a question about this video.';
+      logEl.append(empty);
+    }
 
+    logEl.scrollTop = logEl.scrollHeight;
+    this.updateWatchAiControls();
+  },
+
+  buildWatchAiBubble(markdown, heading = '') {
+    const bubble = document.createElement('div');
+    bubble.className = 'watch-ai-result';
+    if (heading) {
+      const headerEl = document.createElement('div');
+      headerEl.className = 'watch-ai-result-header';
+      headerEl.textContent = heading;
+      bubble.append(headerEl);
+    }
     const body = document.createElement('div');
     body.innerHTML = this.renderMarkdown(markdown);
-    resultEl.append(header, body);
+    bubble.append(body);
+    return bubble;
+  },
+
+  buildWatchAiUserMessage(text) {
+    const el = document.createElement('div');
+    el.className = 'watch-ai-message-user';
+    el.textContent = text;
+    return el;
+  },
+
+  updateWatchAiControls() {
+    const hasSubtitle = Boolean(this.watchAiSubtitle);
+    const busy = Boolean(this.watchAiBusy);
+    const input = document.getElementById('watch-ai-input');
+    const sendBtn = document.getElementById('watch-ai-send');
+    const synthBtn = document.getElementById('watch-ai-btn');
+
+    document.getElementById('watch-ai-subtitle').textContent = hasSubtitle
+      ? `Subtitles: ${this.watchAiSubtitle.label}`
+      : 'Subtitles off. Select a track to use AI.';
+    document.getElementById('watch-ai-btn-label').textContent = this.watchAiNote ? 'Re-synthesize' : 'AI Synthesis';
+    synthBtn.disabled = !hasSubtitle || busy;
+    input.disabled = !hasSubtitle || busy;
+    input.placeholder = hasSubtitle ? 'Ask a question about this video' : 'Select a subtitle track to ask a question';
+    sendBtn.disabled = input.disabled || !input.value.trim();
   },
 
   // marked renders the AI note; DOMPurify sanitizes the output because the text comes from a model

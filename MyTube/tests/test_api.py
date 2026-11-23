@@ -284,6 +284,10 @@ def test_deleting_user_removes_their_subscriptions_and_progress(temp_db):
     ann = _create_user("Ann")
     client.put("/api/channels/alpha/subscription", json={"subscribed": True}, headers=ann)
     client.post("/api/videos/a1/progress", json={"position": 40, "duration": 100}, headers=ann)
+    with get_db() as conn:
+        conn.execute("INSERT INTO user_ai_notes (user_id, media_id, subtitle_label, markdown, created_at) VALUES (?, 'a1', 'English', 'note', '2024-01-01T00:00:00+00:00')", (ann["X-MyTube-User"],))
+        conn.execute("INSERT INTO user_ai_messages (user_id, media_id, role, content, subtitle_label, created_at) VALUES (?, 'a1', 'user', 'q', 'English', '2024-01-01T00:00:00+00:00')", (ann["X-MyTube-User"],))
+        conn.commit()
 
     assert client.delete(f"/api/users/{ann['X-MyTube-User']}").status_code == 204
     assert all(u["user_id"] != ann["X-MyTube-User"] for u in client.get("/api/users").json())
@@ -291,6 +295,8 @@ def test_deleting_user_removes_their_subscriptions_and_progress(temp_db):
     with get_db() as conn:
         assert conn.execute("SELECT COUNT(*) FROM user_subscriptions").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM user_progress").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM user_ai_notes").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM user_ai_messages").fetchone()[0] == 0
 
 def test_migration_backfills_legacy_state_for_xavier(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "legacy.db"))
@@ -517,6 +523,12 @@ def test_movie_sync_removes_items_deleted_in_jellyfin_with_their_progress(temp_d
             """INSERT INTO user_progress (user_id, media_id, media_type, watched, playback_position, updated_at)
                VALUES ('u1', 'gone', 'movie', 0, 10, '2024-01-01T00:00:00+00:00')"""
         )
+        conn.execute(
+            "INSERT INTO user_ai_notes (user_id, media_id, subtitle_label, markdown, created_at) VALUES ('u1', 'gone', 'English', 'note', '2024-01-01T00:00:00+00:00')"
+        )
+        conn.execute(
+            "INSERT INTO user_ai_messages (user_id, media_id, role, content, subtitle_label, created_at) VALUES ('u1', 'gone', 'user', 'q', 'English', '2024-01-01T00:00:00+00:00')"
+        )
         conn.commit()
     monkeypatch.setattr(scanner.jellyfin, "get_image_bytes", lambda *args, **kwargs: None)
 
@@ -525,6 +537,8 @@ def test_movie_sync_removes_items_deleted_in_jellyfin_with_their_progress(temp_d
     with get_db() as conn:
         assert [r["movie_id"] for r in conn.execute("SELECT movie_id FROM movies")] == ["kept"]
         assert conn.execute("SELECT COUNT(*) FROM user_progress WHERE media_id = 'gone'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM user_ai_notes WHERE media_id = 'gone'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM user_ai_messages WHERE media_id = 'gone'").fetchone()[0] == 0
 
     monkeypatch.setattr(scanner.jellyfin, "get_movie_items", lambda: [])
     assert scanner.sync_movies()["removed_movies"] == 0
@@ -712,6 +726,51 @@ def test_gemini_call_gives_up_after_three_retries_and_does_not_retry_client_erro
     with pytest.raises(synthesis_service.SynthesisError):
         synthesis_service.call_gemini("transcript")
     assert len(calls) == 1
+
+
+def _patch_transcript(monkeypatch):
+    monkeypatch.setattr(synthesis_service, "fetch_full_transcript", lambda video_id, index: "transcript text")
+
+
+def test_note_and_chat_are_per_user_and_resynthesis_keeps_chat(temp_db, monkeypatch):
+    _patch_transcript(monkeypatch)
+    monkeypatch.setattr(synthesis_service, "call_gemini", lambda transcript: "## First")
+    synthesis_service.synthesize_subtitle("u1", "vid1", 0, "English")
+    monkeypatch.setattr(synthesis_service, "call_gemini_chat", lambda transcript, history, question: "answer")
+    synthesis_service.ask_video_question("u1", "vid1", 0, "English", "why?")
+
+    monkeypatch.setattr(synthesis_service, "call_gemini", lambda transcript: "## Second")
+    synthesis_service.synthesize_subtitle("u1", "vid1", 0, "English")
+
+    mine = synthesis_service.load_video_ai("u1", "vid1")
+    assert mine["note"]["markdown"] == "## Second"
+    assert [m["content"] for m in mine["messages"]] == ["why?", "answer"]
+    assert synthesis_service.load_video_ai("u2", "vid1") == {"video_id": "vid1", "note": None, "messages": []}
+
+
+def test_follow_up_sends_only_last_ten_turns_to_gemini_as_user_and_model(temp_db, monkeypatch):
+    from backend.ai_chat_store import add_exchange
+
+    _patch_transcript(monkeypatch)
+    with get_db() as conn:
+        for i in range(8):
+            add_exchange(conn.cursor(), "u1", "vid1", "English", f"q{i}", f"a{i}")
+        conn.commit()
+    sent = {}
+
+    def fake_post(url, json, **kwargs):
+        sent.update(json)
+        return _FakeResponse(200, {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+    monkeypatch.setattr(synthesis_service, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(synthesis_service.requests, "post", fake_post)
+    synthesis_service.ask_video_question("u1", "vid1", 0, "English", "next?")
+
+    contents = sent["contents"]
+    assert len(contents) == 11
+    assert contents[0] == {"role": "user", "parts": [{"text": "q3"}]}
+    assert contents[1] == {"role": "model", "parts": [{"text": "a3"}]}
+    assert contents[-1] == {"role": "user", "parts": [{"text": "<question>\nnext?\n</question>"}]}
 
 
 def test_featured_movie_changes_between_home_loads(temp_db):
