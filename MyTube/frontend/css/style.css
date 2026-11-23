@@ -2849,6 +2849,53 @@ video {
   width: 100%;
 }
 
+.music-now-lyrics {
+  display: none;
+  position: relative;
+  width: 100%;
+  height: min(320px, 78vw);
+  overflow-y: auto;
+  scrollbar-width: none;
+  text-align: center;
+}
+
+.music-now-body.lyrics-open .music-now-art {
+  display: none;
+}
+
+.music-now-body.lyrics-open .music-now-lyrics {
+  display: block;
+}
+
+.music-lyric-line {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  text-align: center;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.music-lyric-line.active {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.music-lyric-message,
+.music-lyric-plain {
+  padding: 12px 8px;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 .music-queue {
   width: 100%;
   max-width: 520px;
