@@ -20,10 +20,18 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
         @Environment(MediaSession.self)
         private var mediaSession
 
+        private func presentSubtitleOffset() {
+            #if os(tvOS)
+            viewState.presentGuestSupplement(SubtitleOffsetSupplement())
+            #else
+            viewState.presentGuestSupplement(PlaybackAdjustmentSupplement.subtitleOffset)
+            #endif
+        }
+
         @ContentBuilder
         private var primaryOffsetButton: some View {
             Button {
-                viewState.presentGuestSupplement(PlaybackAdjustmentSupplement.subtitleOffset)
+                presentSubtitleOffset()
             } label: {
                 if isInMenu {
                     Text(L10n.subtitleOffset)

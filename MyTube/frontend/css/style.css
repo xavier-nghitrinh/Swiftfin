@@ -971,8 +971,7 @@ video {
   display: inline-block;
   background: rgba(8, 8, 8, 0.78);
   color: #fff;
-  font-size: clamp(0.92rem, 2vw, 1.35rem);
-  font-weight: 500;
+  font-size: calc(clamp(0.92rem, 2vw, 1.35rem) * var(--subtitle-font-scale, 1.2));
   line-height: 1.4;
   padding: 4px 12px;
   border-radius: 6px;
@@ -1241,7 +1240,7 @@ video {
 }
 
 #sub-menu {
-  min-width: 220px;
+  min-width: 280px;
 }
 
 .sub-shift-container {
@@ -1267,7 +1266,8 @@ video {
   color: #aaa;
 }
 
-.sub-shift-value {
+.sub-shift-value,
+.sub-size-value {
   font-family: monospace, var(--font-mono, sans-serif);
   font-size: 0.82rem;
   color: var(--accent-blue, #3ea6ff);

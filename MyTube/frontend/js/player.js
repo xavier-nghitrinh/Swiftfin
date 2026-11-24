@@ -53,6 +53,7 @@ const Player = {
   currentSubMeta: null,
   subtitleCues: [],
   subtitleOffset: 0,
+  subtitleFontScale: 1.2,
   basePlaybackRate: 1.0,
   isHoldingSpeed: false,
   justFinishedHold: false,
@@ -105,6 +106,7 @@ const Player = {
     this.subMenu = document.getElementById('sub-menu');
     this.speedMenu = document.getElementById('speed-menu');
 
+    this.applySubtitleFontScale();
     this.bindEvents();
     this.setupExternalPlayback();
   },
@@ -1103,32 +1105,54 @@ const Player = {
         <span class="sub-shift-value">0.0s</span>
       </div>
       <div class="sub-shift-actions">
-        <button type="button" class="sub-shift-btn" id="sub-shift-minus" title="Shift subtitles earlier (-0.5s)">-0.5s</button>
+        <button type="button" class="sub-shift-btn" data-offset-delta="-5" title="Shift subtitles earlier (-5s)">-5s</button>
+        <button type="button" class="sub-shift-btn" data-offset-delta="-0.5" title="Shift subtitles earlier (-0.5s)">-0.5s</button>
         <button type="button" class="sub-shift-btn sub-shift-reset disabled" id="sub-shift-reset" title="Reset shift to 0.0s" disabled>Reset</button>
-        <button type="button" class="sub-shift-btn" id="sub-shift-plus" title="Shift subtitles later (+0.5s)">+0.5s</button>
+        <button type="button" class="sub-shift-btn" data-offset-delta="0.5" title="Shift subtitles later (+0.5s)">+0.5s</button>
+        <button type="button" class="sub-shift-btn" data-offset-delta="5" title="Shift subtitles later (+5s)">+5s</button>
       </div>
     `;
 
     shiftContainer.addEventListener('click', (e) => e.stopPropagation());
 
-    const minusBtn = shiftContainer.querySelector('#sub-shift-minus');
-    const plusBtn = shiftContainer.querySelector('#sub-shift-plus');
-    const resetBtn = shiftContainer.querySelector('#sub-shift-reset');
-
-    minusBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.adjustSubtitleOffset(-0.5);
+    shiftContainer.querySelectorAll('[data-offset-delta]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.adjustSubtitleOffset(parseFloat(btn.dataset.offsetDelta));
+      });
     });
-    plusBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.adjustSubtitleOffset(0.5);
-    });
-    resetBtn.addEventListener('click', (e) => {
+    shiftContainer.querySelector('#sub-shift-reset').addEventListener('click', (e) => {
       e.stopPropagation();
       this.setSubtitleOffset(0);
     });
 
     this.subMenu.appendChild(shiftContainer);
+
+    const sizeContainer = document.createElement('div');
+    sizeContainer.className = 'sub-shift-container sub-size-container';
+    sizeContainer.innerHTML = `
+      <div class="sub-shift-header">
+        <span class="sub-shift-title">Subtitle Size</span>
+        <span class="sub-size-value"></span>
+      </div>
+      <div class="sub-shift-actions">
+        <button type="button" class="sub-shift-btn" id="sub-size-minus" title="Decrease subtitle size">A-</button>
+        <button type="button" class="sub-shift-btn" id="sub-size-plus" title="Increase subtitle size">A+</button>
+      </div>
+    `;
+
+    sizeContainer.addEventListener('click', (e) => e.stopPropagation());
+    sizeContainer.querySelector('#sub-size-minus').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.adjustSubtitleFontScale(-0.1);
+    });
+    sizeContainer.querySelector('#sub-size-plus').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.adjustSubtitleFontScale(0.1);
+    });
+
+    this.subMenu.appendChild(sizeContainer);
+    this.applySubtitleFontScale();
 
     const divider = document.createElement('div');
     divider.className = 'dropdown-divider';
@@ -1303,6 +1327,22 @@ const Player = {
     }
   },
 
+  adjustSubtitleFontScale(delta) {
+    const next = Math.round(((this.subtitleFontScale || 1) + delta) * 10) / 10;
+    this.subtitleFontScale = Math.min(2.4, Math.max(0.6, next));
+    this.applySubtitleFontScale();
+  },
+
+  applySubtitleFontScale() {
+    if (this.subtitleOverlay) {
+      this.subtitleOverlay.style.setProperty('--subtitle-font-scale', String(this.subtitleFontScale));
+    }
+    if (this.subMenu) {
+      const valEl = this.subMenu.querySelector('.sub-size-value');
+      if (valEl) valEl.textContent = `${Math.round(this.subtitleFontScale * 100)}%`;
+    }
+  },
+
   renderActiveSubtitleCue() {
     if (!this.subtitleOverlay || this.selectedSubIndex < 0 || this.subtitleCues.length === 0) {
       if (this.subtitleOverlay) this.subtitleOverlay.style.display = 'none';
@@ -1459,9 +1499,10 @@ const Player = {
     const isShowing = menu.classList.contains('active');
     this.closeAllDropdowns();
     if (!isShowing) {
-      const fullscreenRoot = document.fullscreenElement === this.container ||
-        this.container.classList.contains('pseudo-fullscreen');
-      (fullscreenRoot ? this.container : document.body).appendChild(menu);
+      // Native fullscreen only shows the fullscreen element's subtree; pseudo-fullscreen
+      // uses a CSS transform on the container, which would offset fixed-position menus.
+      const nativeFullscreen = document.fullscreenElement === this.container;
+      (nativeFullscreen ? this.container : document.body).appendChild(menu);
       menu.classList.add('active');
       this.container.classList.add('dropdown-open');
       if (this.overlayHideTimeout) clearTimeout(this.overlayHideTimeout);
@@ -1472,19 +1513,21 @@ const Player = {
       const viewportHeight = window.innerHeight;
       const playerRect = this.container.getBoundingClientRect();
       const belowPlayerTop = playerRect.bottom + 8;
-      const maxHeight = Math.min(
-        320,
-        Math.max(100, viewportHeight - (narrowScreen ? belowPlayerTop : 16) - 8)
-      );
+      const belowPlayerSpace = viewportHeight - belowPlayerTop - 8;
+      const placeBelowPlayer = narrowScreen && belowPlayerSpace >= 160;
+      const spaceAbove = rect.top - 16;
+      const spaceBelow = viewportHeight - rect.bottom - 16;
+      const placeAbove = !placeBelowPlayer && spaceAbove >= spaceBelow;
+      let available = spaceBelow;
+      if (placeBelowPlayer) available = belowPlayerSpace;
+      else if (placeAbove) available = spaceAbove;
+      const maxHeight = Math.min(320, Math.max(100, available));
       menu.style.maxHeight = `${maxHeight}px`;
       const height = Math.min(menu.scrollHeight, maxHeight);
       const width = menu.offsetWidth;
-      let top = narrowScreen ? belowPlayerTop : rect.top - height - 8;
-      if (narrowScreen && top + height > viewportHeight - 8) {
-        top = rect.top - height - 8;
-      } else if (top < 8) {
-        top = Math.min(window.innerHeight - height - 8, rect.bottom + 8);
-      }
+      let top = rect.bottom + 8;
+      if (placeBelowPlayer) top = belowPlayerTop;
+      else if (placeAbove) top = rect.top - height - 8;
       const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width));
       menu.style.left = `${left}px`;
       menu.style.top = `${top}px`;
