@@ -117,6 +117,10 @@ const App = {
     window.addEventListener('hashchange', () => this.handleRoute());
     window.addEventListener('mytube:user-invalid', () => this.returnToUserSelection());
     window.addEventListener('mytube:music-changed', (e) => this.onMusicChanged(e.detail));
+    document.getElementById('music-playlist-menu-close').addEventListener('click', () => this.closePlaylistMenu());
+    document.getElementById('music-playlist-menu').addEventListener('click', (e) => {
+      if (e.target.id === 'music-playlist-menu') this.closePlaylistMenu();
+    });
     window.addEventListener('mytube:subtitle-changed', (e) => this.onWatchSubtitleChanged(e.detail));
     document.getElementById('watch-ai-btn').addEventListener('click', () => this.synthesizeWatchAi());
     document.getElementById('watch-ai-form').addEventListener('submit', (e) => this.submitWatchAiQuestion(e));
@@ -761,7 +765,7 @@ const App = {
         return this.musicTrackView(tracks, {
           title: 'Favorites',
           subtitle:           this.countLabel(tracks.length, 'song'),
-          emptyText: 'No favorites yet. Tap the heart on a song to save it here.'
+          emptyText: 'No favorites yet. Use the more menu on a song to add it here.'
         });
       }
       case 'playlists': {
@@ -778,11 +782,7 @@ const App = {
         form.append(input, submit);
         form.addEventListener('submit', (event) => this.createMusicPlaylistFromForm(event, input));
 
-        const cards = playlists.map((playlist) => this.musicCard({
-          title: playlist.name,
-          subtitle: this.countLabel(playlist.track_count, 'song'),
-          onClick: () => { window.location.hash = `#music/playlist/${encodeURIComponent(playlist.playlist_id)}`; }
-        }));
+        const cards = playlists.map((playlist) => this.musicPlaylistCard(playlist));
         return [
           this.musicPageHeader('Playlists', this.countLabel(playlists.length, 'playlist')),
           form,
@@ -841,11 +841,7 @@ const App = {
       subtitle: this.countLabel(collection.track_count, 'song'),
       onClick: () => { window.location.hash = `#music/collection/${encodeURIComponent(collection.name)}`; }
     }));
-    const playlistCards = cardsFor(data.playlists, (playlist) => this.musicCard({
-      title: playlist.name,
-      subtitle: this.countLabel(playlist.track_count, 'song'),
-      onClick: () => { window.location.hash = `#music/playlist/${encodeURIComponent(playlist.playlist_id)}`; }
-    }));
+    const playlistCards = cardsFor(data.playlists, (playlist) => this.musicPlaylistCard(playlist));
 
     const collectionContext = (track) => this.musicCollectionTracks(track);
     const favoritesContext = async () => (await api.getMusicFavorites()).tracks;
@@ -926,11 +922,17 @@ const App = {
 
   musicTrackRow(track, tracks, index, onRemove) {
     const row = this.musicEl('div', 'music-row');
+    row.dataset.trackId = track.track_id;
 
+    const artBtn = this.musicEl('button', 'music-row-art-btn');
+    artBtn.type = 'button';
+    artBtn.setAttribute('aria-label', `Play ${track.title}`);
     const art = this.musicEl('img', 'music-art music-row-art');
     art.alt = '';
     art.loading = 'lazy';
     if (track.image_url) art.src = track.image_url;
+    artBtn.append(art);
+    artBtn.addEventListener('click', () => MusicPlayer.playList(tracks, index));
 
     const info = this.musicEl('button', 'music-row-info');
     info.type = 'button';
@@ -940,17 +942,10 @@ const App = {
     );
     info.addEventListener('click', () => MusicPlayer.playList(tracks, index));
 
-    const duration = this.musicEl('div', 'music-row-duration', MusicPlayer.formatTime(track.duration));
-
-    const fav = this.musicIconButton('Favorite', this.musicIcons.heart, `music-favorite-btn music-row-fav${track.favorite ? ' active' : ''}`);
-    fav.dataset.trackId = track.track_id;
-    fav.setAttribute('aria-pressed', String(!!track.favorite));
-    fav.addEventListener('click', () => MusicPlayer.toggleFavorite(track));
-
     const more = this.musicIconButton('More options', this.musicIcons.more);
     more.addEventListener('click', () => MusicPlayer.openPicker(track));
 
-    row.append(art, info, duration, fav, more);
+    row.append(artBtn, info, more);
 
     if (onRemove) {
       const remove = this.musicIconButton('Remove from playlist', this.musicIcons.close);
@@ -967,7 +962,6 @@ const App = {
   },
 
   musicIcons: {
-    heart: '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>',
     more: '<path fill="currentColor" d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>',
     close: '<path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>'
   },
@@ -1095,22 +1089,67 @@ const App = {
     if (!window.confirm(`Delete playlist "${playlist.name}"?`)) return;
     try {
       await api.deleteMusicPlaylist(playlist.playlist_id);
-      window.location.hash = '#music/playlists';
+      if (window.location.hash.startsWith('#music/playlist/')) window.location.hash = '#music/playlists';
+      else this.renderMusicRoute(window.location.hash);
     } catch (err) {
       this.showToast(err.message);
     }
   },
 
+  musicPlaylistCard(playlist) {
+    const card = this.musicCard({
+      image: playlist.image_url,
+      title: playlist.name,
+      subtitle: this.countLabel(playlist.track_count, 'song'),
+      onClick: () => { window.location.hash = `#music/playlist/${encodeURIComponent(playlist.playlist_id)}`; }
+    });
+    this.bindLongPress(card, () => this.openPlaylistMenu(playlist));
+    return card;
+  },
+
+  bindLongPress(el, onLongPress, delay = 500) {
+    let timer = null;
+    let fired = false;
+    const cancel = () => clearTimeout(timer);
+    el.addEventListener('pointerdown', () => {
+      fired = false;
+      cancel();
+      timer = setTimeout(() => {
+        fired = true;
+        onLongPress();
+      }, delay);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel', 'pointermove'].forEach((type) => el.addEventListener(type, cancel));
+    // Swallow the click that follows a completed long press so the card does not also navigate.
+    el.addEventListener('click', (event) => {
+      if (!fired) return;
+      fired = false;
+      event.stopImmediatePropagation();
+    }, true);
+    el.addEventListener('contextmenu', (event) => event.preventDefault());
+  },
+
+  openPlaylistMenu(playlist) {
+    document.getElementById('music-playlist-menu-title').textContent = playlist.name;
+    const del = this.musicEl('button', 'music-picker-item', 'Delete playlist');
+    del.type = 'button';
+    del.addEventListener('click', () => {
+      this.closePlaylistMenu();
+      this.deleteMusicPlaylist(playlist);
+    });
+    document.getElementById('music-playlist-menu-list').replaceChildren(del);
+    document.getElementById('music-playlist-menu').style.display = 'flex';
+  },
+
+  closePlaylistMenu() {
+    document.getElementById('music-playlist-menu').style.display = 'none';
+    document.getElementById('music-playlist-menu-list').replaceChildren();
+  },
+
   onMusicChanged({ trackId, favorite }) {
-    const onFavorites = window.location.hash === '#music/favorites';
-    document.querySelectorAll('.music-row-fav').forEach((btn) => {
-      if (btn.dataset.trackId !== trackId) return;
-      if (!favorite && onFavorites) {
-        btn.closest('.music-row').remove();
-        return;
-      }
-      btn.classList.toggle('active', favorite);
-      btn.setAttribute('aria-pressed', String(favorite));
+    if (favorite || window.location.hash !== '#music/favorites') return;
+    document.querySelectorAll('.music-row[data-track-id]').forEach((row) => {
+      if (row.dataset.trackId === trackId) row.remove();
     });
   },
 
@@ -1250,11 +1289,11 @@ const App = {
     this.renderWatchAi();
   },
 
-  // Synthesis replaces the saved note for this video; the chat history is kept
+  // Synthesis is offered only until this video has a saved note.
   async synthesizeWatchAi() {
     const subtitle = this.watchAiSubtitle;
     const videoId = this.currentWatchVideoId;
-    if (!subtitle || !videoId || this.watchAiBusy) return;
+    if (!subtitle || !videoId || this.watchAiBusy || this.watchAiNote) return;
 
     this.watchAiBusy = true;
     this.watchAiStatus = { text: `Synthesizing the full ${subtitle.label} subtitle track…`, isError: false };
@@ -1342,7 +1381,6 @@ const App = {
       logEl.append(empty);
     }
 
-    logEl.scrollTop = logEl.scrollHeight;
     this.updateWatchAiControls();
   },
 
@@ -1378,8 +1416,8 @@ const App = {
     document.getElementById('watch-ai-subtitle').textContent = hasSubtitle
       ? `Subtitles: ${this.watchAiSubtitle.label}`
       : 'Subtitles off. Select a track to use AI.';
-    document.getElementById('watch-ai-btn-label').textContent = this.watchAiNote ? 'Re-synthesize' : 'AI Synthesis';
-    synthBtn.disabled = !hasSubtitle || busy;
+    synthBtn.style.display = this.watchAiNote ? 'none' : '';
+    synthBtn.disabled = !hasSubtitle || busy || Boolean(this.watchAiNote);
     input.disabled = !hasSubtitle || busy;
     input.placeholder = hasSubtitle ? 'Ask a question about this video' : 'Select a subtitle track to ask a question';
     sendBtn.disabled = input.disabled || !input.value.trim();

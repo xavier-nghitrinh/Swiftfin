@@ -199,6 +199,10 @@ const MusicPlayer = {
     const token = ++this.pickerToken;
     const list = document.getElementById('music-picker-list');
     list.replaceChildren(
+      this.pickerItem(track.favorite ? 'Remove from favorites' : 'Add to favorites', () => {
+        this.toggleFavorite(track);
+        this.closePicker();
+      }),
       this.pickerItem('Play next', () => {
         this.enqueue(track, true);
         this.closePicker();

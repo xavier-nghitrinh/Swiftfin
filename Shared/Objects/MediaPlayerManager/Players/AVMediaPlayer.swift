@@ -466,15 +466,15 @@ extension AVMediaPlayer {
             return group.options.first
         }
 
-        if let language = streams.first(property: \.index, equalTo: index)?.language {
-            return AVMediaSelectionGroup.mediaSelectionOptions(
-                from: group.options,
-                filteredAndSortedAccordingToPreferredLanguages: [language]
-            )
-            .first
-        }
+        // Tracks sharing a language (e.g. main and commentary) are told apart by their order within that language.
+        guard let language = streams.first(property: \.index, equalTo: index)?.language,
+              let ordinal = streams.filter({ $0.language == language }).firstIndex(where: { $0.index == index })
+        else { return nil }
 
-        return nil
+        return AVMediaSelectionGroup.mediaSelectionOptions(
+            from: group.options,
+            filteredAndSortedAccordingToPreferredLanguages: [language]
+        )[safe: ordinal]
     }
 
     private func updatePlaybackState() {

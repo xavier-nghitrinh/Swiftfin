@@ -20,7 +20,14 @@ final class MPVMediaPlayer {
     let displayTitle = MediaPlayerType.mpv.displayTitle
     let playbackProfile = PlaybackProfile.local(.mpv)
 
-    let player = MPVPlayer(configuration: .init(audio: .init(audioSession: .hostManaged)))
+    let player = MPVPlayer(configuration: .init(
+        audio: .init(audioSession: .hostManaged),
+        cache: .init(
+            maximumBytes: 512 * 1024 * 1024,
+            maximumBackBytes: 64 * 1024 * 1024
+        ),
+        networkCacheDuration: .seconds(120)
+    ))
     private let textSubtitles = TextSubtitlePresentation()
 
     @ObservationIgnored

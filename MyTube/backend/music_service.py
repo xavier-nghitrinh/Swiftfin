@@ -66,14 +66,28 @@ class MusicService:
     @classmethod
     def _list_playlists(cls, cursor, user_id: str) -> List[Dict[str, Any]]:
         cursor.execute("""
-            SELECT p.playlist_id, p.name, p.created_at, p.updated_at, COUNT(i.item_id) AS track_count
+            SELECT p.playlist_id, p.name, p.created_at, p.updated_at, COUNT(i.item_id) AS track_count,
+                (
+                    SELECT COALESCE(t.image_item_id, t.track_id)
+                    FROM music_playlist_items fi
+                    JOIN music_tracks t ON t.track_id = fi.track_id
+                    WHERE fi.playlist_id = p.playlist_id
+                    ORDER BY fi.item_id
+                    LIMIT 1
+                ) AS image_item_id
             FROM music_playlists p
             LEFT JOIN music_playlist_items i ON i.playlist_id = p.playlist_id
             WHERE p.user_id = ?
             GROUP BY p.playlist_id
             ORDER BY p.updated_at DESC
         """, (user_id,))
-        return [dict(r) for r in cursor.fetchall()]
+        playlists = []
+        for r in cursor.fetchall():
+            d = dict(r)
+            image_item_id = d.pop("image_item_id")
+            d["image_url"] = jellyfin.get_image_url(image_item_id, "Primary", 300, 80) if image_item_id else None
+            playlists.append(d)
+        return playlists
 
     @classmethod
     def get_home(cls, user_id: str) -> Dict[str, Any]:
