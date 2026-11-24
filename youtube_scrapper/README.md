@@ -123,6 +123,8 @@ On Windows, generated media output paths use the extended-length `\\?\` prefix s
 
 Video mode caps format selection at the chosen height, muxes/remuxes to MKV, and only downloads subtitle tracks when explicitly selected. If no voice language is chosen, yt-dlp automatically selects the default audio track without language filtering. Audio mode extracts the chosen audio format but keeps ytdl-sub's Jellyfin episode/NFO organization.
 
+After a successful non-dry-run sync, a subtitle repair pass checks archived videos from today and the previous two UTC calendar dates for channels with subtitle languages configured. Videos with no embedded or external subtitles are retried once per run using the configured languages, including automatic captions. A usable subtitle is saved beside the video as a Jellyfin-compatible `.language.vtt` file; the video and download archive are not changed. The normal Jellyfin refresh follows the repair pass. The runner logs each attempt and a `Subtitle repair summary` with checked, attempted, fixed, not-fixed, and error counts. Set `SUBTITLE_REPAIR_ENABLED=0` to disable the pass; review the logs after five days to decide whether to keep it.
+
 Generated files are in `.runtime/`: `config.yaml` contains one custom preset per channel and `subscriptions.yaml` lists the URLs. The UI regenerates them whenever settings or subscriptions are saved. On a headless host, run `config_builder.py` after setting that host's paths and before `runner.py`.
 
 ## Commands

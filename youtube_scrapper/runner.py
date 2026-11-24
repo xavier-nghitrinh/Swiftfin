@@ -17,6 +17,7 @@ import yaml
 from yt_dlp.networking.impersonate import ImpersonateTarget
 
 from config_builder import generate_runtime_files
+from subtitle_repair import repair_subtitles
 
 if sys.platform == "win32":
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
@@ -333,6 +334,13 @@ def main() -> int:
     else:
         LOGGER.info("Sync finished successfully")
         if not args.dry_run:
+            if os.environ.get("SUBTITLE_REPAIR_ENABLED", "1").lower() not in {"0", "false", "no", "off"}:
+                try:
+                    repair_subtitles(RUNTIME_CONFIG_FILE, SUBSCRIPTIONS_FILE)
+                except (KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+                    LOGGER.error("Subtitle repair failed: %s", exc)
+            else:
+                LOGGER.info("Subtitle repair disabled")
             trigger_jellyfin_refresh()
             trigger_mytube_sync()
     return return_code
