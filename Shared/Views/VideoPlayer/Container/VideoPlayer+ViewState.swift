@@ -340,9 +340,12 @@ extension VideoPlayer {
                 }
                 #endif
 
+                // tvOS has no supplement tabs in controls. Chapter skip actions still read `supplements`.
+                #if os(iOS)
                 if supplements.isNotEmpty {
                     elements.insert(.supplements)
                 }
+                #endif
 
                 return elements
 

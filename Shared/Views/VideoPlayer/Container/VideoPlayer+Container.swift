@@ -954,7 +954,7 @@ extension VideoPlayer {
                 ),
                 overlayActionsView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: viewLayout.edgePadding),
                 overlayActionsView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -viewLayout.edgePadding),
-                overlayActionsView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -viewLayout.edgePadding),
+                overlayActionsView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             ])
             #else
             let topAnchor = playbackControlsView.topAnchor.constraint(equalTo: view.topAnchor)

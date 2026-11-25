@@ -12,31 +12,71 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
 
     struct SubtitleOffset: View {
 
-        @ViewContextContains(.isInMenu)
-        private var isInMenu
-
         @Environment(ViewState.self)
         private var viewState
         @Environment(MediaSession.self)
         private var mediaSession
 
-        private func presentSubtitleOffset() {
-            #if os(tvOS)
-            viewState.presentGuestSupplement(SubtitleOffsetSupplement())
-            #else
-            viewState.presentGuestSupplement(PlaybackAdjustmentSupplement.subtitleOffset)
-            #endif
+        private var offset: Duration {
+            mediaSession.playbackItem?.subtitleOffset ?? .zero
         }
+
+        private func adjust(by milliseconds: Int64) {
+            mediaSession.playbackItem?.subtitleOffset = offset + .milliseconds(milliseconds)
+        }
+
+        private func offsetButton(_ label: String, milliseconds: Int64) -> some View {
+            Button(label) {
+                adjust(by: milliseconds)
+            }
+        }
+
+        #if os(tvOS)
+        @ContentBuilder
+        var body: some View {
+            Menu(L10n.subtitleOffset, systemImage: VideoPlayerActionButton.subtitleOffset.systemImage) {
+                Group {
+                    Text(offset, format: .playbackOffset)
+
+                    offsetButton("-5s", milliseconds: -5000)
+                    offsetButton("-0.5s", milliseconds: -500)
+
+                    Button(L10n.reset) {
+                        mediaSession.playbackItem?.subtitleOffset = .zero
+                    }
+                    .disabled(offset == .zero)
+
+                    offsetButton("+0.5s", milliseconds: 500)
+                    offsetButton("+5s", milliseconds: 5000)
+                }
+                // Keep the menu open so repeated adjustments don't reopen it.
+                .menuActionDismissBehavior(.disabled)
+
+                if mediaSession.playbackItem?.supportsSecondarySubtitles == true {
+                    Button {
+                        viewState.presentGuestSupplement(PlaybackAdjustmentSupplement.secondarySubtitleOffset)
+                    } label: {
+                        Text(L10n.secondarySubtitleOffset)
+
+                        Text(mediaSession.playbackItem?.secondarySubtitleOffset ?? .zero, format: .playbackOffset)
+                    }
+                }
+            }
+            .menuOrder(.fixed)
+        }
+        #else
+        @ViewContextContains(.isInMenu)
+        private var isInMenu
 
         @ContentBuilder
         private var primaryOffsetButton: some View {
             Button {
-                presentSubtitleOffset()
+                viewState.presentGuestSupplement(PlaybackAdjustmentSupplement.subtitleOffset)
             } label: {
                 if isInMenu {
                     Text(L10n.subtitleOffset)
 
-                    Text(mediaSession.playbackItem?.subtitleOffset ?? .zero, format: .playbackOffset)
+                    Text(offset, format: .playbackOffset)
                 } else {
                     Label(
                         L10n.subtitleOffset,
@@ -65,5 +105,6 @@ extension VideoPlayer.PlaybackControls.Toolbar.ActionButtons {
                 primaryOffsetButton
             }
         }
+        #endif
     }
 }

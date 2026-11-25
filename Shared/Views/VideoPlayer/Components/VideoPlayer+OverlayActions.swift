@@ -45,6 +45,8 @@ extension VideoPlayer {
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             #if os(tvOS)
+            // Without actions the view has no height, so it doesn't reserve space above the playback controls.
+            .padding(.bottom, actions.isEmpty ? 0 : viewLayout.edgePadding)
             .focusSection()
             .onMoveCommand { direction in
                 if direction == .left || direction == .right,
