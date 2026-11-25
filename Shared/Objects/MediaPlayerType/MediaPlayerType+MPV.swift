@@ -114,34 +114,25 @@ extension MediaPlayerType {
     @ArrayBuilder<SubtitleProfile>
     static var _mpvSubtitleProfiles: [SubtitleProfile] {
         SubtitleProfile.build(method: .embed) {
-            // On tvOS, exclude ASS/SSA from direct playback so Jellyfin converts them to SubRip.
-            // MPVUI only intercepts non-ASS text tracks; routing ASS/SSA through SubRip ensures
-            // standardized Apple TV CaptionStyle rendering and proper CoreText Unicode shaping.
-            #if !os(tvOS)
             SubtitleFormat.ass
-            #endif
             SubtitleFormat.cc_dec
             SubtitleFormat.dvbsub
             SubtitleFormat.dvdsub
             SubtitleFormat.mov_text
             SubtitleFormat.mpl2
             SubtitleFormat.pgssub
-            #if !os(tvOS)
             SubtitleFormat.ssa
-            #endif
             SubtitleFormat.subrip
             SubtitleFormat.vtt
             SubtitleFormat.xsub
         }
 
         // - Note: Sidecar files are opened with `sub-add`, so only formats with an enabled demuxer are listed
-        // - Note: Unmatched text subtitles (including ASS/SSA on tvOS) are converted to the first option (subrip)
+        // - Note: Unmatched text subtitles are converted to the first option (subrip)
         SubtitleProfile.build(method: .external) {
             SubtitleFormat.subrip
-            #if !os(tvOS)
             SubtitleFormat.ass
             SubtitleFormat.ssa
-            #endif
             SubtitleFormat.vtt
         }
 

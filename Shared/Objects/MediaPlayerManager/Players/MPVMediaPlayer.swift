@@ -54,6 +54,8 @@ final class MPVMediaPlayer {
 
     @ObservationIgnored
     private var subtitleLoads: [Int: Task<Bool, Never>] = [:]
+    @ObservationIgnored
+    private var failedConvertedSubtitles: Set<Int> = []
 
     @ObservationIgnored
     private var observedState: MPVPlaybackState = .idle
@@ -256,6 +258,7 @@ extension MPVMediaPlayer: VideoMediaPlayer {
         }
 
         subtitleLoads.removeAll()
+        failedConvertedSubtitles.removeAll()
 
         pendingPlaybackStatus = nil
         observedState = .idle
@@ -439,7 +442,9 @@ extension MPVMediaPlayer: VideoMediaPlayer {
             mediaStreams: item.mediaSource.mediaStreams ?? [],
             tracks: information.tracks,
             isTranscoding: item.mediaSource.transcodingURL != nil,
-            selectedAudioStreamIndex: item.selectedAudioStreamIndex
+            selectedAudioStreamIndex: item.selectedAudioStreamIndex,
+            failedConvertedSubtitles: failedConvertedSubtitles,
+            canConvertSubtitles: !item.baseItem.isLiveStream && item.baseItem.id != nil && item.mediaSource.id != nil
         )
 
         if !hasAppliedInitialTracks || item.indexMap != map {
@@ -502,7 +507,7 @@ extension MPVMediaPlayer: MediaPlayerExternalSubtitleProviding {
     func prepareSubtitle(_ stream: MediaStream) async -> Bool {
         guard let item = loadedItem,
               let generation = loadGeneration,
-              stream.isSidecarSubtitle,
+              stream.isSidecarSubtitle || stream.prefersConvertedSRTSidecar,
               let index = stream.index,
               index >= 0
         else {
@@ -517,43 +522,74 @@ extension MPVMediaPlayer: MediaPlayerExternalSubtitleProviding {
             return await pending.value
         }
 
-        guard let client = mediaSession?.userSession.client, let url = stream.url(with: client) else {
+        guard let client = mediaSession?.userSession.client else {
             return false
         }
 
-        let descriptor = MPVExternalTrack(
-            url: url,
-            type: .subtitle,
-            clientID: MPVTrackIdentity.subtitleID(index),
-            title: stream.displayTitle,
-            language: stream.language,
-            selection: .unselected
-        )
+        var candidateURLs: [URL] = []
+        if stream.prefersConvertedSRTSidecar,
+           !item.baseItem.isLiveStream,
+           let convertedURL = stream.convertedSRTURL(with: client, itemID: item.baseItem.id, mediaSourceID: item.mediaSource.id) {
+            candidateURLs.append(convertedURL)
+        }
+        if let directURL = stream.url(with: client), !candidateURLs.contains(directURL) {
+            candidateURLs.append(directURL)
+        }
+
+        guard !candidateURLs.isEmpty else {
+            if stream.prefersConvertedSRTSidecar, !stream.isSidecarSubtitle {
+                failedConvertedSubtitles.insert(index)
+                updateTracks(for: item)
+            }
+            return false
+        }
 
         let task = Task { [weak self, weak item, player] in
-            do {
-                _ = try await player.loadExternalTrack(descriptor)
+            var lastError: Error?
 
-                guard !Task.isCancelled, let self, let item, loadedItem === item, loadGeneration == generation else {
+            for url in candidateURLs {
+                let descriptor = MPVExternalTrack(
+                    url: url,
+                    type: .subtitle,
+                    clientID: MPVTrackIdentity.subtitleID(index),
+                    title: stream.displayTitle,
+                    language: stream.language,
+                    selection: .unselected
+                )
+
+                do {
+                    _ = try await player.loadExternalTrack(descriptor)
+
+                    guard !Task.isCancelled, let self, let item, loadedItem === item, loadGeneration == generation else {
+                        return false
+                    }
+
+                    // Mapping applies the latest primary/secondary choices, even if they changed during the read.
+                    updateMediaInformation(player.mediaInformation, for: item)
+
+                    return true
+                } catch is CancellationError {
                     return false
+                } catch {
+                    lastError = error
                 }
+            }
 
-                // Mapping applies the latest primary/secondary choices, even if they changed during the read.
-                updateMediaInformation(player.mediaInformation, for: item)
-
-                return true
-            } catch is CancellationError {
-                return false
-            } catch {
-                guard !Task.isCancelled, let self, loadGeneration == generation else {
-                    return false
-                }
-
-                let message = (error as? MPVPlayerError)?.message ?? String(describing: error)
-                mediaSession?.logger.error("MPV subtitle import failed: \(Self.redacted(message))")
-
+            guard !Task.isCancelled, let self, let item, loadedItem === item, loadGeneration == generation else {
                 return false
             }
+
+            if let lastError {
+                let message = (lastError as? MPVPlayerError)?.message ?? String(describing: lastError)
+                mediaSession?.logger.error("MPV subtitle import failed: \(Self.redacted(message))")
+            }
+
+            if stream.prefersConvertedSRTSidecar, !stream.isSidecarSubtitle {
+                failedConvertedSubtitles.insert(index)
+                updateTracks(for: item)
+            }
+
+            return false
         }
 
         subtitleLoads[index] = task

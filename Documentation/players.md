@@ -113,7 +113,7 @@ Swiftfin offers two player engines: **MPV** and **AVPlayer**. MPV is the default
 - [1] Bitmap subtitle formats can be played if embedded in the container (MKV) but require server-side burn-in when the source is an external file.
 - [2] Bitmap subtitle formats require server-side burn-in for playback.
 - [3] Text subtitles are converted by the server and delivered as WebVTT inside the HLS stream. This requires the server to remux or transcode the video, and styling (such as ASS effects) is not preserved.
-- [4] Text subtitles that MPV cannot load directly are converted to SubRip by the server. On tvOS, ASS/SSA subtitles are also converted to SubRip so all text subtitles render consistently with Apple TV caption settings and CoreText shaping.
+- [4] Text subtitles that MPV cannot load directly are converted to SubRip by the server. On tvOS, ASS/SSA subtitles are fetched as SubRip sidecars from Jellyfin so all text subtitles render consistently with Apple TV caption settings and CoreText shaping without forcing a video transcode.
 - You can force subtitle burn-in from the video player settings (**Force Subtitle Burn-In**).
 
 ---

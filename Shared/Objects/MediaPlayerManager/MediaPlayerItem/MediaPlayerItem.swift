@@ -304,7 +304,7 @@ final class MediaPlayerItem {
             return true
         }
 
-        guard let stream = subtitleStreams.first(where: { $0.index == index && $0.isSidecarSubtitle }),
+        guard let stream = subtitleStreams.first(where: { $0.index == index && ($0.isSidecarSubtitle || $0.prefersConvertedSRTSidecar) }),
               let provider = mediaSession?.player as? MediaPlayerExternalSubtitleProviding
         else {
             return false

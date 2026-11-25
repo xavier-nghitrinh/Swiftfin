@@ -19,7 +19,9 @@ extension MediaTrackIndexMap {
         mediaStreams: [MediaStream],
         tracks: [MPVMediaTrack],
         isTranscoding: Bool,
-        selectedAudioStreamIndex: Int?
+        selectedAudioStreamIndex: Int?,
+        failedConvertedSubtitles: Set<Int> = [],
+        canConvertSubtitles: Bool = true
     ) -> MediaTrackIndexMap {
         var map = MediaTrackIndexMap()
 
@@ -106,11 +108,19 @@ extension MediaTrackIndexMap {
             }
         }
 
-        for stream in mediaStreams.sidecarSubtitles {
-            if let index = stream.index,
-               let track = tracks
+        for stream in mediaStreams where stream.isSidecarSubtitle || stream.prefersConvertedSRTSidecar {
+            guard let index = stream.index else { continue }
+
+            if let track = tracks
                 .first(where: { $0.type == .subtitle && $0.isExternal && $0.clientID == MPVTrackIdentity.subtitleID(index) }) {
                 map.setPlayerIndex(track.mpvID, for: index)
+            } else if stream.prefersConvertedSRTSidecar,
+                      !stream.isSidecarSubtitle,
+                      canConvertSubtitles,
+                      !isTranscoding,
+                      !failedConvertedSubtitles.contains(index) {
+                // Defer embedded ASS/SSA selection until the server-converted SubRip sidecar is loaded.
+                map.removePlayerIndex(for: index)
             }
         }
 

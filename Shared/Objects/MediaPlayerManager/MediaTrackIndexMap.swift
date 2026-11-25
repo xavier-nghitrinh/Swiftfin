@@ -27,6 +27,10 @@ struct MediaTrackIndexMap: Equatable {
         playerIndexesByJellyfinIndex[jellyfinIndex] = playerIndex
     }
 
+    mutating func removePlayerIndex(for jellyfinIndex: Int) {
+        playerIndexesByJellyfinIndex.removeValue(forKey: jellyfinIndex)
+    }
+
     /// Maps Jellyfin stream indexes to positions in each player track array.
     /// Embedded tracks keep their order, while transcoding exposes only the selected audio track.
     /// Sidecar subtitles are resolved after loading.

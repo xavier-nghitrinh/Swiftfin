@@ -21,12 +21,52 @@ extension MediaStream {
         type == .subtitle && deliveryMethod == .external && deliveryURL != nil && isTextSubtitleStream == true
     }
 
+    var isASSOrSSASubtitle: Bool {
+        guard type == .subtitle, let codec = codec?.lowercased() else { return false }
+
+        return codec == "ass" || codec == "ssa"
+    }
+
+    /// On tvOS, ASS/SSA subtitles are fetched from Jellyfin as converted SubRip sidecars so
+    /// MPVUI intercepts them into TextSubtitleOverlay with Apple TV CaptionStyle and CoreText shaping.
+    var prefersConvertedSRTSidecar: Bool {
+        #if os(tvOS)
+        type == .subtitle && deliveryMethod != .encode && deliveryMethod != .drop && isASSOrSSASubtitle
+        #else
+        false
+        #endif
+    }
+
     func url(with client: JellyfinClient) -> URL? {
         guard let deliveryURL else { return nil }
 
         let deliveryPath = deliveryURL.removingFirst(if: client.configuration.url.absoluteString.last == "/")
 
         return client.url(path: deliveryPath)
+    }
+
+    func convertedSRTURL(with client: JellyfinClient, itemID: String?, mediaSourceID: String?) -> URL? {
+        if let baseURL = url(with: client),
+           var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: true) {
+            let lowerPath = components.path.lowercased()
+            if lowerPath.hasSuffix(".ass") || lowerPath.hasSuffix(".ssa") {
+                components.path = String(components.path.dropLast(4)) + ".srt"
+                if let converted = components.url {
+                    return converted
+                }
+            }
+        }
+
+        guard let itemID, let mediaSourceID, let index, index >= 0 else { return nil }
+
+        let request = Paths.getSubtitle(
+            routeItemID: itemID,
+            routeMediaSourceID: mediaSourceID,
+            routeIndex: index,
+            routeFormat: "srt"
+        )
+
+        return client.url(with: request, queryAPIKey: true)
     }
 
     var is4kVideo: Bool {
