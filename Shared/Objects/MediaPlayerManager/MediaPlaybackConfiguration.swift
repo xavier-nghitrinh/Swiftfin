@@ -158,8 +158,15 @@ struct MediaPlaybackConfiguration {
         // Keep the source we selected so retries can resolve it against fresh metadata.
         mediaSourceID = initialSource.id
 
+        let candidateDefaultAudio = source.defaultAudioStreamIndex
+            ?? audioStreams.first(where: { $0.isDefault == true })?.index
+            ?? audioStreams.first?.index
+        let resolvedDefaultAudio = MediaPlaybackPreferences
+            .nonCommentaryFallback(in: audioStreams, defaultIndex: candidateDefaultAudio)?
+            .index ?? candidateDefaultAudio
+
         selectTracks(
-            audio: audioStreamIndex ?? source.defaultAudioStreamIndex ?? audioStreams.first?.index ?? 0,
+            audio: audioStreamIndex ?? resolvedDefaultAudio ?? 0,
             subtitle: subtitleStreamIndex ?? -1,
             secondary: secondarySubtitleStreamIndex ?? -1,
             preservingPreferences: true

@@ -471,9 +471,10 @@ extension AVMediaPlayer {
               let ordinal = streams.filter({ $0.language == language }).firstIndex(where: { $0.index == index })
         else { return nil }
 
+        let canonicalLanguage = Locale.canonicalLanguageIdentifier(from: language)
         return AVMediaSelectionGroup.mediaSelectionOptions(
             from: group.options,
-            filteredAndSortedAccordingToPreferredLanguages: [language]
+            filteredAndSortedAccordingToPreferredLanguages: [canonicalLanguage, language]
         )[safe: ordinal]
     }
 

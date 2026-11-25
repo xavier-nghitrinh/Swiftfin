@@ -68,6 +68,10 @@ final class MPVMediaPlayer {
     private var appliedAudioOffset: Duration?
     @ObservationIgnored
     private var appliedSubtitleOffsets: [MPVSubtitleRole: Duration] = [:]
+    @ObservationIgnored
+    private var hasAppliedInitialTracks = false
+    @ObservationIgnored
+    private var requestedAudioTrackID: MPVMediaTrackIdentifier?
 
     @ObservationIgnored
     private var automaticPiPRequested = false
@@ -95,6 +99,13 @@ final class MPVMediaPlayer {
 
             logger.log(level: level, "mpv [\(message.prefix)]: \(Self.redacted(message.message))")
         }
+
+        #if os(tvOS)
+        // Defensive fallback: ASS/SSA are converted to SubRip by Jellyfin on tvOS so they render
+        // through TextSubtitleOverlay, but if an ASS track ever reaches mpv directly, strip
+        // authored ASS styling so libass doesn't fall back to mismatched glyphs.
+        player.setProperty("sub-ass", to: "no")
+        #endif
 
         #if os(iOS)
         automaticPiPObservation = observeAutomaticPictureInPicture()
@@ -208,8 +219,13 @@ extension MPVMediaPlayer: VideoMediaPlayer {
                 return
             }
 
-            if let track = player.audioTracks.first(where: { $0.mpvID == index }), !track.isSelected {
-                player.selectTrack(track.id)
+            if let track = player.audioTracks.first(where: { $0.mpvID == index }) {
+                if !track.isSelected || (requestedAudioTrackID != nil && requestedAudioTrackID != track.id) {
+                    requestedAudioTrackID = track.id
+                    player.selectTrack(track.id)
+                } else if requestedAudioTrackID == nil {
+                    requestedAudioTrackID = track.id
+                }
             }
 
         case .subtitle:
@@ -249,6 +265,8 @@ extension MPVMediaPlayer: VideoMediaPlayer {
 
         appliedAudioOffset = nil
         appliedSubtitleOffsets.removeAll()
+        hasAppliedInitialTracks = false
+        requestedAudioTrackID = nil
 
         textSubtitles.clear()
         videoState = VideoPlaybackState()
@@ -424,7 +442,8 @@ extension MPVMediaPlayer: VideoMediaPlayer {
             selectedAudioStreamIndex: item.selectedAudioStreamIndex
         )
 
-        if item.indexMap != map {
+        if !hasAppliedInitialTracks || item.indexMap != map {
+            hasAppliedInitialTracks = true
             item.setTrackIndexes(map)
         }
     }

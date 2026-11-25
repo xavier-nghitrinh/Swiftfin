@@ -17,7 +17,7 @@ enum MPVTrackIdentity {
         let name = name.lowercased()
 
         switch name {
-        case "dts_hd":
+        case "dca", "dts_hd":
             return "dts"
 
         case "dv":

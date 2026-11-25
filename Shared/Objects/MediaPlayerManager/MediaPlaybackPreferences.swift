@@ -32,17 +32,32 @@ struct MediaPlaybackPreferences {
         let streams = source.mediaStreams ?? []
         let audioStreams = streams.filter { $0.type == .audio && $0.isExternal != true && ($0.index ?? -1) >= 0 }
         let subtitles = streams.filter { $0.type == .subtitle && $0.deliveryMethod != .drop && ($0.index ?? -1) >= 0 }
-        let defaultAudio = audioStreams.first(property: \.index, equalTo: source.defaultAudioStreamIndex)
+        let defaultAudio = Self.nonCommentaryFallback(in: audioStreams, defaultIndex: source.defaultAudioStreamIndex)
+            ?? audioStreams.first(property: \.index, equalTo: source.defaultAudioStreamIndex)
 
         // Wait for the server's language choice when its default audio index is not available yet.
         let preferredAudio = defaultAudio.flatMap { preferredAudio(in: audioStreams, default: $0) }
-        let audioIndex = explicitAudio ?? preferredAudio?.index ?? source.defaultAudioStreamIndex
+        let audioIndex = explicitAudio ?? preferredAudio?.index ?? defaultAudio?.index ?? source.defaultAudioStreamIndex
         let audioLanguage = audioStreams.first(property: \.index, equalTo: audioIndex)?.language
 
         return Selection(
             audio: audioIndex,
             subtitle: explicitSubtitle ?? preferredSubtitle(in: subtitles, audioLanguage: audioLanguage)
         )
+    }
+
+    /// When a file has multiple audio tracks and the default track is a commentary track,
+    /// fall back to the next non-commentary track (wrapping around if commentary is last).
+    static func nonCommentaryFallback(in audioStreams: [MediaStream], defaultIndex: Int?) -> MediaStream? {
+        guard audioStreams.count > 1,
+              let defaultPosition = audioStreams.firstIndex(where: { $0.index == defaultIndex }),
+              audioStreams[defaultPosition].isCommentaryAudio
+        else {
+            return nil
+        }
+
+        let orderedCandidates = audioStreams[(defaultPosition + 1)...] + audioStreams[..<defaultPosition]
+        return orderedCandidates.first { !$0.isCommentaryAudio }
     }
 
     private func preferredAudio(in streams: [MediaStream], default fallback: MediaStream?) -> MediaStream? {
@@ -159,6 +174,16 @@ extension MediaStream {
         [title, displayTitle].compactMap(\.self).contains {
             $0.range(
                 of: #"\b(audio[ -]?description[s]?|audio[ -]?described|descriptive[ -]?audio|described[ -]?video)\b|(?:^|[\[(]| - )(?:AD|DVS)(?:$|[\])]| - )"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil
+        }
+    }
+
+    /// Whether metadata labels indicate this audio stream is a commentary track.
+    var isCommentaryAudio: Bool {
+        [title, displayTitle].compactMap(\.self).contains {
+            $0.range(
+                of: #"\bcommentar(?:y|ies)\b"#,
                 options: [.regularExpression, .caseInsensitive]
             ) != nil
         }
